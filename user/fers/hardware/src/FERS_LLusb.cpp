@@ -336,18 +336,25 @@ using namespace std;
 					return false;
 				}
 				if ((desc.idVendor == 0x04D8) && (desc.idProduct == 0x53)) {
+					if (InterfaceIndex != fersIdx) {
+						++fersIdx;
+						++i;
+						continue;
+					}
 					r = libusb_open((libusb_device *) (devs[i]),dev_handle);
 					if (r != 0) {
 						libusb_free_device_list(devs, 1); //free the list, unref the devices in it
-						libusb_exit(ctx); //close the session
+						if (InterfaceIndex == 0) libusb_exit(ctx); //close the session
 						return false;
 					}
 					if(libusb_kernel_driver_active(*dev_handle, 0) == 1) { //find out if kernel driver is attached
 						if(libusb_detach_kernel_driver(*dev_handle, 0) != 0) {
 							libusb_close(*dev_handle);
 							libusb_free_device_list(devs, 1); //free the list, unref the devices in it
-							libusb_exit(ctx); //close the session
-							ctx = nullptr;
+							if (InterfaceIndex == 0) {
+								libusb_exit(ctx); //close the session
+								ctx = nullptr;
+							}
 							return false;
 						}
 					}
@@ -355,8 +362,10 @@ using namespace std;
 					if(r < 0) {
 						libusb_close(*dev_handle);
 						libusb_free_device_list(devs, 1); //free the list, unref the devices in it
-						libusb_exit(ctx); //close the session
-						ctx = nullptr;
+						if (InterfaceIndex == 0) {
+							libusb_exit(ctx); //close the session
+							ctx = nullptr;
+						}
 						return false;
 					}
 					if (InterfaceIndex == fersIdx) {
@@ -364,10 +373,10 @@ using namespace std;
 						libusb_free_device_list(devs, 1); //free the list, unref the devices in it
 						return true;
 					}
-					else {
-						libusb_close(*dev_handle);
-						fersIdx++;
-					}
+					//else {
+					//	libusb_close(*dev_handle);
+					//	fersIdx++;
+					//}
 				}
 				i++;
 			}
@@ -421,7 +430,6 @@ using namespace std;
 		}
 
 		int USBDEV::set_service_reg(uint32_t address, uint32_t data) {
-			int r;
 			unsigned char OUTBuffer[512];		//BOOTLOADER HACK
 			unsigned char INBuffer[512];		//BOOTLOADER HACK
 			int actual; //used to find out how many bytes were written
@@ -529,6 +537,7 @@ static int QuitThread[FERSLIB_MAX_NBRD] = { 0 };		// Quit Thread
 static f_thread_t ThreadID[FERSLIB_MAX_NBRD];			// RX Thread ID
 static mutex_t RxMutex[FERSLIB_MAX_NBRD];				// Mutex for the access to the Rx data buffer and pointers
 static FILE *Dump[FERSLIB_MAX_NBRD] = { NULL };			// low level data dump files (for debug)
+static uint8_t ReadData_Init[FERSLIB_MAX_NBRD] = { 0 }; // Re-init read pointers after run stop
 
 #define USB_BLK_SIZE  (512 * 8)					// Max size of one USB packet (4k)
 #define RX_BUFF_SIZE  (16 * USB_BLK_SIZE)		// Size of the local Rx buffer
@@ -616,6 +625,7 @@ static void *usb_data_receiver(void *params) {
 			}
 			if ((FERS_ReadoutStatus == ROSTATUS_RUNNING) && empty) {  // start of run
 				// Clear Buffers
+				ReadData_Init[bindex] = 1;
 				RxBuff_rp[bindex] = 0;
 				RxBuff_wp[bindex] = 0;
 				RxB_r[bindex] = 0;
@@ -751,13 +761,15 @@ int LLusb_ReadData(int bindex, char *buff, int maxsize, int *nb) {
 	//static FILE *dd = NULL;
 
 	*nb = 0;
-	if ((FERS_ReadoutStatus == ROSTATUS_IDLE) || (FERS_ReadoutStatus == ROSTATUS_FLUSHING)) {
+	if (trylock(RxMutex[bindex]) != 0) return 0;
+	if (ReadData_Init[bindex]) {
 		RdReady[bindex] = 0;
 		Nbr[bindex] = 0;
+		ReadData_Init[bindex] = 0;
+		unlock(RxMutex[bindex]);
 		return 2;
 	} 
 
-	if (trylock(RxMutex[bindex]) != 0) return 0;
 	if (RxStatus[bindex] != RXSTATUS_RUNNING) {
 		unlock(RxMutex[bindex]);
 		return 2;
@@ -818,37 +830,23 @@ int LLusb_OpenDevice(int PID, int bindex) {
 			}
 			Ndev = i;
 			OpenAllDevices = 0;
-
-			// DNIN: here at least!
-			for (i = 0; i < Ndev; i++) {
-				if (!FERS_usb[i].IsOpen)
-					return FERSLIB_ERR_COMMUNICATION;  // no further connected board is found
-				FERS_usb[i].read_reg(a_pid, &d32);
-				if (d32 == PID) break; 
-			} // DNIN: which is the meaning of d32=PID and i=Ndev controls when you have > 1 boards!!
-			if (i == Ndev) return FERSLIB_ERR_COMMUNICATION;  // no board found with the given PID
-			// Swap indexes (i = board with wanted PID, bindex = wanted board index) DNIN: with >1 board is useful?
-			memcpy(&FERS_usb_temp, &FERS_usb[bindex], sizeof(USBDEV));
-			memcpy(&FERS_usb[bindex], &FERS_usb[i], sizeof(USBDEV));
-			memcpy(&FERS_usb[i], &FERS_usb_temp, sizeof(USBDEV));
 		}
 
-		if (!FERS_usb[bindex].IsOpen)
-			return FERSLIB_ERR_COMMUNICATION;
+		// DNIN: here at least!
+		for (i = 0; i < Ndev; i++) {
+			if (!FERS_usb[i].IsOpen)
+				return FERSLIB_ERR_COMMUNICATION;  // no further connected board is found
+			FERS_usb[i].read_reg(a_pid, &d32);
+			if (d32 == PID) break;
+		} 
+		if (i == Ndev) return FERSLIB_ERR_COMMUNICATION;  // no board found with the given PID
+		// Swap indexes (i = board with wanted PID, bindex = wanted board index) 
+		memcpy(&FERS_usb_temp, &FERS_usb[bindex], sizeof(USBDEV));
+		memcpy(&FERS_usb[bindex], &FERS_usb[i], sizeof(USBDEV));
+		memcpy(&FERS_usb[i], &FERS_usb_temp, sizeof(USBDEV));
 
-
-		// DNIN: this is wrong, you would like to check for open board depeding on the bindex you are taking as input, not from 0!!
-		//for (i = 0; i < Ndev; i++) {
-		//	if (!FERS_usb[i].IsOpen)
-		//		return FERSLIB_ERR_COMMUNICATION;  // no further connected board is found
-		//	FERS_usb[i].read_reg(a_pid, &d32);
-		//	if (d32 == PID) break;
-		//}
-		//if (i == Ndev) return FERSLIB_ERR_COMMUNICATION;  // no board found with the given PID
-		//// Swap indexes (i = board with wanted PID, bindex = wanted board index)
-		//memcpy(&FERS_usb_temp, &FERS_usb[bindex], sizeof(USBDEV));
-		//memcpy(&FERS_usb[bindex], &FERS_usb[i], sizeof(USBDEV));
-		//memcpy(&FERS_usb[i], &FERS_usb_temp, sizeof(USBDEV));
+		//if (!FERS_usb[bindex].IsOpen)
+		//	return FERSLIB_ERR_COMMUNICATION;
 
 	} else {  // open using consecutive index instead of PID
 		ret = FERS_usb[bindex].open_connection(PID);

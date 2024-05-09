@@ -14,15 +14,13 @@
 * software, documentation and results solely at his own risk.
 ******************************************************************************/
 
-#include "MultiPlatform.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include "JanusC.h"
 #include "Statistics.h"
 #include "FERSlib.h"
 #include "console.h"
-
+#include "MultiPlatform.h"
 
 // ****************************************************************************************
 // Global Variables
@@ -198,7 +196,7 @@ int Histo1D_SetCount(Histogram1D_t* Histo, int counts)
 int GetNumLine(char* filename) {	// To initialize Histogram
 	FILE* hfile;
 	if (!(hfile = fopen(filename, "r"))) {
-		printf("The file %s does not exists\n", filename);
+		Con_printf("LCSW", "Warning: the histogram file %s does not exists\n", filename);
 		return -1;
 	}
 	char tmp_str[100];
@@ -494,8 +492,8 @@ int CreateStatistics(int nb, int nch, int *AllocatedSize)
 		
 		// Allocate histograms form file 
 		int maxnbin = WDcfg.EHistoNbin;
-		maxnbin = max(maxnbin, WDcfg.ToAHistoNbin);
-		maxnbin = max(maxnbin, WDcfg.ToTHistoNbin);
+		maxnbin = fmax(maxnbin, WDcfg.ToAHistoNbin);
+		maxnbin = fmax(maxnbin, WDcfg.ToTHistoNbin);
 		CreateHistogram1D(maxnbin, "", "", "", "Cnt", &Stats.H1_File[i]);
 		*AllocatedSize += maxnbin*sizeof(uint32_t);
 		// Allocate stair case from file (similar to histogram 1D but threated in a different way)
@@ -572,6 +570,8 @@ int ResetStatistics()	// Have H1_File to be reset?
 		Stats.previous_trgid[b] = 0;
 		Stats.current_tstamp_us[b] = 0;
 		Stats.previous_tstamp_us[b] = 0;
+		Stats.trgcnt_update_us[b] = 0;
+		Stats.previous_trgcnt_update_us[b] = 0;
 		Stats.LostTrgPerc[b] = 0;
 		Stats.BuildPerc[b] = 0;
 		memset(&Stats.LostTrg[b], 0, sizeof(Counter_t));
@@ -619,8 +619,10 @@ void UpdateCounter(Counter_t *Counter, uint32_t cnt) {
 }
 
 void UpdateCntRate(Counter_t *Counter, double elapsed_time_us, int RateMode) {
-	if (elapsed_time_us <= 0) 
-		Counter->rate = 0;
+	if (elapsed_time_us <= 0) {
+		//Counter->rate = 0;
+		return;
+	}
 	else if (RateMode == 1)
 		Counter->rate = Counter->cnt / (elapsed_time_us * 1e-6);
 	else 
@@ -637,13 +639,15 @@ int UpdateStatistics(int RateMode)
 	for(b=0; b<FERSLIB_MAX_NBRD; b++) {
 		double brd_elapstime = (RateMode == 1) ? Stats.current_tstamp_us[b] - Stats.start_time : Stats.current_tstamp_us[b] - Stats.previous_tstamp_us[b];  
 		double elapstime = (brd_elapstime > 0) ? brd_elapstime : pc_elapstime;
+		double trgcnt_elapstime = (RateMode == 1) ? Stats.trgcnt_update_us[b] - Stats.start_time : Stats.trgcnt_update_us[b] - Stats.previous_trgcnt_update_us[b];  
 		Stats.previous_tstamp_us[b] = Stats.current_tstamp_us[b];
+		Stats.previous_trgcnt_update_us[b] = Stats.trgcnt_update_us[b];
 		for(ch=0; ch<FERSLIB_MAX_NCH; ch++) {
 			/*if (HistoCreated[b][ch]) {
 				Stats.H1_PHA_HG[b][ch].mean = MEAN(Stats.H1_PHA_HG[b][ch].mean, Stats.H1_PHA_HG[b][ch].H_cnt);
 				Stats.H1_PHA_LG[b][ch].mean = MEAN(Stats.H1_PHA_LG[b][ch].mean, Stats.H1_PHA_LG[b][ch].H_cnt);
 			}*/
-			UpdateCntRate(&Stats.ChTrgCnt[b][ch], elapstime, RateMode);
+			UpdateCntRate(&Stats.ChTrgCnt[b][ch], trgcnt_elapstime, RateMode);
 			UpdateCntRate(&Stats.HitCnt[b][ch], elapstime, RateMode);
 			UpdateCntRate(&Stats.PHACnt[b][ch], elapstime, RateMode);
 		}
@@ -670,10 +674,10 @@ int UpdateStatistics(int RateMode)
 		if (Stats.BuildPerc[b] > 100) 
 			Stats.BuildPerc[b] = 100;
 		UpdateCntRate(&Stats.LostTrg[b], elapstime, RateMode);
-		UpdateCntRate(&Stats.T_OR_Cnt[b], elapstime, RateMode);
-		UpdateCntRate(&Stats.Q_OR_Cnt[b], elapstime, RateMode);
+		UpdateCntRate(&Stats.T_OR_Cnt[b], trgcnt_elapstime, RateMode);
+		UpdateCntRate(&Stats.Q_OR_Cnt[b], trgcnt_elapstime, RateMode);
 		UpdateCntRate(&Stats.GlobalTrgCnt[b], elapstime, RateMode);
-		UpdateCntRate(&Stats.ByteCnt[b], elapstime, RateMode);
+		UpdateCntRate(&Stats.ByteCnt[b], pc_elapstime, RateMode);
 	}
 	Stats.BuiltEventCnt.pcnt = Stats.BuiltEventCnt.cnt;
 	return 0;

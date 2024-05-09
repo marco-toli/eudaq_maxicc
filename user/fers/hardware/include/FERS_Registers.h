@@ -39,6 +39,8 @@
 #define a_tref_window      0x0100004C   //  Tref coincidence window (for list mode)
 #define a_dwell_time       0x01000050   //  Dwell time (periodic trigger) in clk cyclces. 0 => OFF
 #define a_list_size        0x01000054   //  Number of 32 bit words in a packet in timing mode (list mode)
+#define a_pck_maxcnt       0x01000064   //  Max num of packets transmitted to the TDL
+#define a_dprobe           0x01000068   //  Digital probes (signal inspector)
 #define a_channel_mask_0   0x01000100   //  Input Channel Mask (ch  0 to 31)
 #define a_channel_mask_1   0x01000104   //  Input Channel Mask (ch 32 to 63)
 #define a_citiroc_cfg      0x01000108   //  Citiroc common configuration bits
@@ -69,6 +71,8 @@
 #define a_tdc_data         0x01000230   //  R/W   C   32    Regs of TDC
 #define a_tlogic_def       0x01000234   //  Trigger Logic Definition
 #define a_hit_width        0x01000238   //  Monostable for CR triggers
+#define a_i2c_addr         0x01000240   //  I2C Addr
+#define a_i2c_data         0x01000244   //  I2C Data
 #define a_fw_rev           0x01000300   //  Firmware Revision 
 #define a_acq_status       0x01000304   //  Acquisition Status
 #define a_real_time        0x01000308   //  Real Time in ms
@@ -83,6 +87,12 @@
 #define a_test_led         0x01000228   //  LED test mode
 #define a_tdc_mode         0x0100022C   //  TDC Mode
 #define a_tdc_data         0x01000230   //  TDC Data
+#define a_hv_Vmon          0x01000356   //  HV Vmon
+#define a_hv_Imon          0x01000358   //  HV Imon
+#define a_hv_status        0x01000360   //  HV Status
+#define a_uC_status        0x01000600   //  uC status
+#define a_uC_shutdown      0x01000604   //  uC shutdown
+
 
 #define a_commands         0x01008000   //  Send Commands (for Eth and USB)
 #define a_zs_lgthr         0x02000000   //  Threshold for zero suppression (LG)
@@ -165,6 +175,8 @@
 #define DPROBE_DATA_VALID				6
 #define DPROBE_CLK_1024					7
 #define DPROBE_VAL_WINDOW				8
+#define DPROBE_T_OR						9
+#define DPROBE_Q_OR						10
 
 #define GAIN_SEL_AUTO					0
 #define GAIN_SEL_HIGH					1
@@ -173,6 +185,14 @@
 
 #define FAST_SHAPER_INPUT_HGPA			0
 #define FAST_SHAPER_INPUT_LGPA			1
+
+// *****************************************************************
+// Address of I2C devices
+// *****************************************************************
+#define I2C_ADDR_TDC(i)					(0x63 - (i)) 
+#define I2C_ADDR_PLL0					0x68
+#define I2C_ADDR_PLL1					0x69
+#define I2C_ADDR_PLL2					0x70
 
 
 // *****************************************************************

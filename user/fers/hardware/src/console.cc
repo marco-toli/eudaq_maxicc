@@ -26,14 +26,7 @@ f_socket_t ConSocket = 0;	// 0: stdio console; 1: console I/O through socket
 FILE *ConLog = NULL;
 SocketBuffer_t Sbuff; 
 
-
-#ifdef _WIN32  // Windows
-
-#include <windows.h>
-#include <tchar.h>
-#include <strsafe.h>
-
-#else // linux
+#ifdef linux
 
 #define CLEARSCR "clear"
 
@@ -44,7 +37,7 @@ static struct termios g_old_kbd_mode;
 
 static void cooked(void)
 {
-	tcsetattr(0, TCSANOW, &g_old_kbd_mode);
+	tcsetattr(STDIN_FILENO, TCSANOW, &g_old_kbd_mode);
 }
 
 static void raw(void)
@@ -59,7 +52,7 @@ static void raw(void)
 	new_kbd_mode.c_lflag &= ~(ICANON | ECHO);
 	new_kbd_mode.c_cc[VTIME] = 0;
 	new_kbd_mode.c_cc[VMIN] = 1;
-	tcsetattr(0, TCSANOW, &new_kbd_mode);
+	tcsetattr(STDIN_FILENO, TCSANOW, &new_kbd_mode);
 	/* when we exit, go back to normal, "cooked" mode */
 	atexit(cooked);
 	init = 1;
@@ -71,14 +64,20 @@ static void raw(void)
 int _scanf(char *fmt, ...)	// // before calling the scanf function it is necessart to change termios settings
 {
 	int ret;
-	cooked();
+	//cooked();
 	va_list args;
 	va_start(args, fmt);
 	ret = vscanf(fmt, args);
 	va_end(args);
-	raw();
+	//raw();
 	return ret;
 }
+
+#else  // Windows
+
+#include <windows.h>
+#include <tchar.h>
+#include <strsafe.h>
 
 #endif
 
@@ -97,9 +96,9 @@ int _scanf(char *fmt, ...)	// // before calling the scanf function it is necessa
 void* ListenThread(void *arg) {
 	int size;
 	char *rxbuff;
+	rxbuff = (char*)malloc(SOCKET_BUFFER_SIZE);
 
-	rxbuff = (char *)malloc(SOCKET_BUFFER_SIZE);
-    // Receive until the peer closes the connection
+    // Receive until the peer closes the connection or an error occur in the socket
     do {
         size = recv(ConSocket, rxbuff, SOCKET_BUFFER_SIZE, 0);
         if (size > 0) {
@@ -124,6 +123,11 @@ void* ListenThread(void *arg) {
 			Con_printf("L", "ERROR: recv failed with error: %d\n", f_socket_errno); // WSAGetLastError());
 		}
     } while (size > 0);
+	lock(Sbuff.mutex);
+	memcpy(Sbuff.sharedData + Sbuff.wpnt, "q1", 2);
+	Sbuff.wpnt += 2;
+	unlock(Sbuff.mutex);
+
 	free(rxbuff);
 	return NULL;
 }
@@ -237,11 +241,11 @@ int GetCharFromGUI() {	// Fine
 	return c;
 }
 
-int GetStringFromGUI(char* str, int* size, int max_size) {		// I would say it is fine
+int GetStringFromGUI(char* str, int* size, int max_size) {		
 	int i = 0;
 
 	*size = 0;
-	lock(Sbuff.mutex);	// lock->multiplatform to test    Sbuff? I think so
+	lock(Sbuff.mutex);	
 	while ((Sbuff.sharedData[Sbuff.rpnt] != '\n') && (Sbuff.rpnt < Sbuff.wpnt) && (i < max_size)) {
 		str[i++] = Sbuff.sharedData[Sbuff.rpnt++];
 	}
@@ -469,6 +473,7 @@ int SendDataToGUI(char* data, int size)
 	//	c_send(const c_socket_t * sckt, const void* buffer, size_t totSize)
 	if (send(ConSocket, data, size, 0) < 0) {	// send IS multiplatform!!!
 		Con_printf("L", "ERROR: send data to socket failed\n");
+
 #ifdef _WIN32
 		WSACleanup();	// only on windows?
 #endif
@@ -484,8 +489,10 @@ int SendDataToGUI(char* data, int size)
 // --------------------------------------------------------------------------------------------------------- 
 int Con_printf(char *dest, char *fmt, ...) 
 {
+	const int msize = 2048;
 	char msg[1000];
 	uint16_t size;
+	int8_t ret = 0;
 	//static int cnt=0;
 	va_list args;
 
@@ -498,7 +505,7 @@ int Con_printf(char *dest, char *fmt, ...)
 	}
 
 	if (ConSocket && (strstr(dest, "S"))) {
-		char buff[1024], sdest[10];
+		char buff[msize + 12], sdest[10];
 		sprintf(sdest, "%s", strstr(dest, "S") + 1);
 		size = 2 + (uint16_t)strlen(sdest) + (uint16_t)strlen(msg);
 		buff[0] = size & 0xFF;

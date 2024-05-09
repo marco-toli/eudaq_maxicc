@@ -24,7 +24,6 @@
 
 #include "FERSlib.h"
 #include "FERSutils.h"
-#include "FERS_Registers.h"
 #include "console.h"
 
 #include "JanusC.h"
@@ -113,6 +112,7 @@ void PrintMap()
 	ClearScreen();
 }
 
+#ifdef FERS_5202
 // ****************************************************
 // HV Control Panel
 // ****************************************************
@@ -143,7 +143,7 @@ void HVControlPanel(int handle)
 			printf("[t] Data Type    %d              \n", DataType);
 			printf("[r] Read HV Reg  %d (0x%08X)     \n", Rdata, Rdata);
 			printf("[w] Write HV Reg %d (0x%08X)     \n", Wdata, Wdata);
-			printf("[q] quit\n\n");
+			printf("[q] Return\n\n");
 			printf("Vmon = %.3f V              \n", vmon);
 			printf("Imon = %.3f mA             \n", imon);
 			printf("OvC = %d, OvV = %d         \n", OvC, OvV);
@@ -276,7 +276,7 @@ void CitirocControlPanel(int handle)
 	}
 	ClearScreen();
 }
-
+#endif
 
 // ****************************************************
 // Manual Controller for register R/W access
@@ -285,9 +285,12 @@ void ManualController(int handle)
 {
 	int c=0, i, print_menu=1, pagenum;
 	static uint32_t base=0x0100, ch=0, offs=0, addr, rdata=0, wdata=0, cmd=0;
+	static uint32_t i2c_reg_addr=0, i2c_reg_rdata=0, i2c_reg_wdata=0, i2c_dev_index=0;
 	uint8_t fpage[FLASH_PAGE_SIZE];
 	uint32_t *buff = NULL;
 	char fname[100];
+	char i2c_dev_name[4][20] = {"TDC0", "TDC1", "PLL0", "PLL1"};
+	uint32_t i2c_dev_addr[4] = {I2C_ADDR_TDC(0), I2C_ADDR_TDC(1), I2C_ADDR_PLL0, I2C_ADDR_PLL1};
 	FILE *fp;
 
 	while(c != 'q') {
@@ -327,6 +330,99 @@ void ManualController(int handle)
 			if (c=='r') {
 				FERS_ReadRegister(handle, addr, &rdata);
 			}
+			if (c=='i') {
+				while(1) {
+					ClearScreen();
+					printf("[d] I2C Dev Addr  : %s\n", i2c_dev_name[i2c_dev_index]);
+					printf("[a] I2C Reg Addr  : %04X\n", i2c_reg_addr);
+					printf("[r] Read Cycle    : %08X\n", i2c_reg_rdata);
+					printf("[w] Write Cycle   : %08X\n", i2c_reg_wdata);
+					/*printf("[0] Configure PLL0\n");
+					printf("[1] Configure PLL1\n");*/
+					printf("[q] Quit I2C\n");
+					c = getch();
+					if (c == 'd') i2c_dev_index = (i2c_dev_index + 1) % 4;
+					if (c == 'q') {
+						c = 0;
+						break;
+					}
+					if ((c == 'a') || (c == '1')) {
+						printf("Enter Reg Addr (Hex): ");
+						scanf("%x", &i2c_reg_addr);
+					}
+					if (c == 'w') {
+						printf("Enter Reg Data (Hex): ");
+						scanf("%x", &i2c_reg_wdata);
+						FERS_I2C_WriteRegister(handle, i2c_dev_addr[i2c_dev_index], i2c_reg_addr, i2c_reg_wdata);
+					}
+					if (c == 'r') {
+
+						FERS_I2C_ReadRegister(handle, i2c_dev_addr[i2c_dev_index], i2c_reg_addr, &i2c_reg_rdata);
+					}
+					if (c == 'l') {
+						char line[500];
+						int PLLindex = 0, ret = 0;
+						char fname[200] = "D:\\work\\a5203\\PLL\\Si5394_Reg.txt";
+						uint32_t addr, data_r, devaddr;
+						FILE* reg = fopen(fname, "r");
+						FILE* PLL_reg = fopen("D:\\work\\a5203\\PLL\\PLL_read_reg.txt", "w");
+						if (reg == NULL) {
+							printf("ERR: can't open %s", fname);
+						} else {
+							devaddr = (PLLindex == 0) ? I2C_ADDR_PLL0 : I2C_ADDR_PLL1;
+							while (!feof(reg)) {
+								fgets(line, 100, reg);
+								sscanf(line + 2, "%x", &addr);
+								if (line[0] != '0') continue;
+								ret |= FERS_I2C_ReadRegister(handle, devaddr, addr, &data_r);
+								if (ret < 0) {
+									printf("Error in read register 0x%04X\n", addr);
+									break;
+								}
+								fprintf(PLL_reg, "0x%04X,0x%02X\n", addr, data_r);
+								printf("%04X - %02X\n", addr, data_r);
+							}						
+						}
+						fclose(PLL_reg);
+						fclose(reg);
+						
+						getch();
+					}
+
+					if (c == 'p') {
+						char line[500];
+						int s = 0;
+						int PLLindex = 1, ret = 0;
+						int cnt_r = 0;
+						char fname[200] = "D:\\work\\a5203\\PLL\\Si5394_Reg.txt";
+						uint32_t addr, data, devaddr;
+						FILE* reg = fopen(fname, "r");
+						if (reg == NULL) {
+							printf("ERR: can't open %s", fname);
+						} else {
+							devaddr = (PLLindex == 0) ? I2C_ADDR_PLL0 : I2C_ADDR_PLL1;
+							while (!feof(reg)) {
+								fgets(line, 100, reg);
+								if (line[0] != '0') continue;
+								sscanf(line + 2, "%x", &addr);
+								sscanf(line + 9, "%x", &data);
+								printf("%04X - %08X\n", addr, data);
+								FERS_I2C_WriteRegister(handle, devaddr, addr, data);  // CTIN: patch for bug in FW (write 4 bytes intead of 1 in PLL)
+								if ((addr == 0x0540) && (cnt_r == 0)) {
+									Sleep(500);
+									cnt_r++;
+								} else
+									cnt_r = 0;
+							}
+						}
+						printf("Operation ended successfully\n");
+						fclose(reg);
+						getch();
+					}
+				}
+			}
+
+
 			if (c=='R') {
 				printf("Enter page number : ");
 				scanf("%d", &pagenum);
@@ -361,6 +457,7 @@ void ManualController(int handle)
 				}
 				FERS_WriteFlashPage(handle, pagenum, FLASH_PAGE_SIZE, fpage);
 			}
+#ifdef FERS_5202
 			if (c=='p') {
 				char date[20];
 				uint16_t pedLG[FERSLIB_MAX_NCH], pedHG[FERSLIB_MAX_NCH];
@@ -374,6 +471,9 @@ void ManualController(int handle)
 				printf("\nDCoffset: LG0=%4d  HG0=%4d  LG1=%4d   HG1=%4d\n", DCoffset[0], DCoffset[1], DCoffset[2], DCoffset[3]);
 				getch();
 			}
+
+			
+#endif
 			print_menu = 1;
 		}
 		if (base == 0x0200)
@@ -383,18 +483,21 @@ void ManualController(int handle)
 		if (print_menu) {
 			ClearScreen();
 			printf("Board n. %d\n", FERS_INDEX(handle));
-			printf("[b] change base      (%04X)\n", base);
-			printf("[c] change channel   (%02d)\n", ch);
-			printf("[+] next channel\n");
-			printf("[-] prev channel\n");
-			printf("[a] set address      (%08X)\n", addr);
-			printf("[r] read reg         (%08X)\n", rdata);
-			printf("[w] write reg        (%08X)\n", wdata);
-			printf("[s] send command     (%02X)\n", cmd);
-			printf("[R] read flash page\n");
-			printf("[W] write flash page\n");
+			printf("[b] Change base      (%04X)\n", base);
+			printf("[c] Change channel   (%02d)\n", ch);
+			printf("[+] Next channel\n");
+			printf("[-] Prev channel\n");
+			printf("[a] Set address      (%08X)\n", addr);
+			printf("[r] Read reg         (%08X)\n", rdata);
+			printf("[w] Write reg        (%08X)\n", wdata);
+			printf("[s] Send command     (%02X)\n", cmd);
+			printf("[i] I2C R/W reg\n");
+			printf("[R] Read flash page\n");
+			printf("[W] Write flash page\n");
+#ifdef FERS_5202
 			printf("[p] read pedestal calibration\n");
-			printf("[q] quit\n");
+#endif
+			printf("[q] Return\n");
 			print_menu = 0;
 		}
 	}
@@ -406,6 +509,7 @@ void ManualController(int handle)
 // *********************************************************
 // Calculate Pedestals
 // *********************************************************
+#ifdef FERS_5202
 #define CALIB_NCYC  200
 int AcquirePedestals(int handle, uint16_t *pedestalLG, uint16_t *pedestalHG)
 {
@@ -481,7 +585,7 @@ int ScanThreshold(int handle)
 	uint16_t nstep = (RunVars.StaircaseCfg[SCPARAM_MAX] - RunVars.StaircaseCfg[SCPARAM_MIN])/RunVars.StaircaseCfg[SCPARAM_STEP] + 1;
 	float dwell_s = (float)RunVars.StaircaseCfg[SCPARAM_DWELL] / 1000;
 
-	Con_printf("CSm", "Scanning thresholds:\n");
+	Con_printf("CSm", "Scanning thresholds (press 'S' to stop):\n");
 	Con_printf("Sa", "%02dRunning Staircase (0 %%)", ACQSTATUS_STAIRCASE);
 
 	st = fopen(SCAN_THR_FILENAME, "w");
@@ -507,11 +611,12 @@ int ScanThreshold(int handle)
 		thr = start + s * step;
 		FERS_WriteRegister(handle, a_qd_coarse_thr, thr);	// Threshold for Q-discr
 		FERS_WriteRegister(handle, a_td_coarse_thr, thr);	// Threshold for T-discr
-		FERS_WriteRegister(handle, a_scbs_ctrl, 0x000);		// set citiroc index = 0
-		FERS_SendCommand(handle, CMD_CFG_ASIC);
 		FERS_WriteRegister(handle, a_scbs_ctrl, 0x200);		// set citiroc index = 1
 		FERS_SendCommand(handle, CMD_CFG_ASIC);
-		Sleep(500);
+		Sleep(20);
+		FERS_WriteRegister(handle, a_scbs_ctrl, 0x000);		// set citiroc index = 0
+		FERS_SendCommand(handle, CMD_CFG_ASIC);
+		Sleep(20);
 		FERS_WriteRegister(handle, a_trg_mask, 0x20); // enable periodic trigger
 		FERS_SendCommand(handle, CMD_RES_PTRG);  // Reset period trigger counter and count for dwell time
 		Sleep((int)(dwell_s/1000 + 200));  // wait for a complete dwell time (+ margin), then read counters
@@ -533,6 +638,10 @@ int ScanThreshold(int handle)
 			Con_printf("Sa", "%02dRunning Staircase (%d %%)", ACQSTATUS_STAIRCASE, perc);
 			fprintf(st, "%10.3e %10.3e ", Tor_cnt/dwell_s, Qor_cnt/dwell_s);
 			fprintf(st, "\n");
+		}
+		if (Con_kbhit()) {
+			if (Con_getch() == 'S')
+				break;
 		}
 	}
 
@@ -571,7 +680,7 @@ int ScanHoldDelay(int handle)
 		Stats.Hold_PHA_2Dmap[b][ch] = (uint32_t *)calloc(512 * nstep * 2, sizeof(uint32_t)); // DNIN: this works but the problem need to be further investigated(double the memory allocation)
 	}
 
-	Con_printf("CSm", "Scanning Hold Delay\n");
+	Con_printf("CSm", "Scanning Hold Delay (press 'S' to stop)\n");
 	Con_printf("Sa", "%02dRunning Hold-Scan (0 %%)", ACQSTATUS_HOLD_SCAN);
 
 	FERS_StopAcquisition(&hh, 1, STARTRUN_ASYNC);
@@ -579,6 +688,7 @@ int ScanHoldDelay(int handle)
 	FERS_WriteRegisterSlice(handle, a_acq_ctrl, 12, 13, 3); // 0=auto, 1=high gain, 2=low gain, 3=both
 	FERS_WriteRegister(handle, a_trg_mask, WDcfg.TriggerMask);  
 	FERS_WriteRegister(handle, a_run_mask, 0x01); 
+	FERS_SetCommonPedestal(handle, WDcfg.Pedestal);
 
 	for(si = 0; si < nstep; si++) {
 		delay = start + step * si;
@@ -606,18 +716,26 @@ int ScanHoldDelay(int handle)
 					Stats.Hold_PHA_2Dmap[b][ch][y*nstep + x]++;
 				}
 				ns++;
-			} else break;
+			} else {
+				break;
+			}
 		}
-		if (i < nmean) 
+		if (i < nmean) {
 			break;
+		}
 		Con_printf("CSm", "Hold-Delay = %3d ns (%2d %%)\n", delay, 100*(delay-start)/(stop-start));
 		Con_printf("Sa", "%02dRunning Hold-Scan (%d %%)", ACQSTATUS_HOLD_SCAN, 100*(delay-start)/(stop-start));
 		FERS_StopAcquisition(&hh, 1, STARTRUN_ASYNC);
 		Sleep(100);
 		FERS_FlushData(handle);
+		if (Con_kbhit()) {
+			if (Con_getch() == 'S')
+				break;
+		}
+
 	}
 	Con_printf("Sa", "%02dRunning Hold-Scan (100 %%)", ACQSTATUS_HOLD_SCAN);
 	Con_printf("Sa", "%02dDone\n", ACQSTATUS_HOLD_SCAN);
     return 0;
 }
-
+#endif

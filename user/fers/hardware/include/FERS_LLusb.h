@@ -11,7 +11,6 @@
 #include <Winusb.h>
 #else
 #include <libusb.h>
-//#include "/usr/local/Cellar/libusb/1.0.26/include/libusb-1.0/libusb.h"
 #endif
 #include <string>
 #include <iostream>
@@ -24,7 +23,6 @@
 #include <sstream>
 
 
-#include "FERS_Registers.h"
 #include "FERS_LL.h"
 #include "FERSlib.h"
 #include "MultiPlatform.h"

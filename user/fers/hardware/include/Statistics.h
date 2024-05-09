@@ -135,6 +135,8 @@ typedef struct Stats_t {
 	uint64_t current_trgid[STATS_MAX_NBRD];						// Current Trigger ID
 	uint64_t previous_trgid[STATS_MAX_NBRD];					// Previous Trigger ID (used to calculate lost triggers)
 	uint64_t previous_trgid_p[STATS_MAX_NBRD];					// Previous Trigger ID (used to calculate percent of lost triggers)
+	double trgcnt_update_us[STATS_MAX_NBRD];					// update time of the trg counters
+	double previous_trgcnt_update_us[STATS_MAX_NBRD];			// Previous update time of the trg counters
 	Counter_t ChTrgCnt[STATS_MAX_NBRD][STATS_MAX_NCH];			// Channel Trigger counter from fast discriminators (when counting mode is enabled)
 	Counter_t HitCnt[STATS_MAX_NBRD][STATS_MAX_NCH];			// Recorded Hit counter (when timing mode is enabled)
 	Counter_t PHACnt[STATS_MAX_NBRD][STATS_MAX_NCH];			// PHA event counter HG or LG (when spectroscopy mode is enabled)

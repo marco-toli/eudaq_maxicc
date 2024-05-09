@@ -25,7 +25,6 @@
 
 #include "FERS_LL.h"
 #include "FERSlib.h"
-#include "FERS_Registers.h"
 #include "MultiPlatform.h"
 #include "console.h"
 
@@ -50,6 +49,7 @@ static int QuitThread[FERSLIB_MAX_NBRD] = { 0 };		// Quit Thread
 static f_thread_t ThreadID[FERSLIB_MAX_NBRD];			// RX Thread ID
 static mutex_t RxMutex[FERSLIB_MAX_NBRD];				// Mutex for the access to the Rx data buffer and pointers
 static FILE *Dump[FERSLIB_MAX_NBRD] = { NULL };			// low level data dump files (for debug)
+static uint8_t ReadData_Init[FERSLIB_MAX_NBRD] = { 0 }; // Re-init read pointers after run stop
 
 #define ETH_BLK_SIZE  (1024)						// Max size of one packet in the recv 
 #define RX_BUFF_SIZE  (1024*1024)					// Size of the local Rx buffer
@@ -375,6 +375,7 @@ static void* eth_data_receiver(void *params) {
 		if (RxStatus[bindex] == RXSTATUS_IDLE) {
 			if ((FERS_ReadoutStatus == ROSTATUS_RUNNING) && empty) {  // start of run
 				// Clear Buffers
+				ReadData_Init[bindex] = 1;
 				RxBuff_rp[bindex] = 0;
 				RxBuff_wp[bindex] = 0;
 				RxB_r[bindex] = 0;
@@ -479,6 +480,19 @@ static void* eth_data_receiver(void *params) {
 		}
 		tdata = ct;
 
+#if (THROUGHPUT_METER == 1)
+		// Rate Meter: print raw data throughput (RxBuff_wp is not updated, thus the data consumer doesn't see any data to process)
+		static uint64_t totnb = 0, lt = ct, l0 = ct;
+		totnb += nbrx;
+		if ((ct - lt) > 1000) {
+			printf("%6.1f s: %10.6f MB/s\n", float(ct - l0) / 1000, float(totnb) / (ct - lt) / 1000);
+			totnb = 0;
+			lt = ct;
+		}
+		unlock(RxMutex[bindex]);
+		continue;
+#endif
+
 		lock(RxMutex[bindex]);
 		RxBuff_wp[bindex] += nbrx;
 		if ((ct - pt) > 10) {  // every 10 ms, check if the data consumer is waiting for data or if the thread has to quit
@@ -524,13 +538,15 @@ int LLeth_ReadData(int bindex, char *buff, int maxsize, int *nb) {
 	static int Nbr[FERSLIB_MAX_NBRD] = { 0 };
 
 	*nb = 0;
-	if ((FERS_ReadoutStatus == ROSTATUS_IDLE) || (FERS_ReadoutStatus == ROSTATUS_FLUSHING)) {
+	if (trylock(RxMutex[bindex]) != 0) return 0;
+	if (ReadData_Init[bindex]) {
 		RdReady[bindex] = 0;
 		Nbr[bindex] = 0;
+		ReadData_Init[bindex] = 0;
+		unlock(RxMutex[bindex]);
 		return 2;
 	} 
 
-	if (trylock(RxMutex[bindex]) != 0) return 0;
 	if ((RxStatus[bindex] != RXSTATUS_RUNNING) && (RxStatus[bindex] != RXSTATUS_EMPTYING)) {
 		unlock(RxMutex[bindex]);
 		return 2;
@@ -624,18 +640,11 @@ int LLeth_CloseDevice(int bindex)
 	unlock(RxMutex[bindex]);
 
 	shutdown(FERS_CtrlSocket[bindex], SHUT_SEND);	
-#ifndef _WIN32
-	unsigned char data;
-	while (recv(FERS_CtrlSocket[bindex], &data, sizeof(data), 0) != 0);
-#endif
 	if (FERS_CtrlSocket[bindex] != f_socket_invalid) {
 		f_socket_close(FERS_CtrlSocket[bindex]);
 	}
 
 	shutdown(FERS_DataSocket[bindex], SHUT_SEND);
-#ifndef _WIN32
-	while (recv(FERS_DataSocket[bindex], &data, sizeof(data), 0) != 0);
-#endif
 	if (FERS_DataSocket[bindex] != f_socket_invalid) {
 		f_socket_close(FERS_DataSocket[bindex]);
 	}

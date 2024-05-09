@@ -609,7 +609,7 @@ int read_header(std::vector<uint8_t> *vec, int *board, uint8_t *DataQualifier)
 // dump a vector
 void dump_vec(std::string title, std::vector<uint8_t> *vec, int start, int stop){
 	int n = vec->size();
-	if (stop > 0) n = min(n, stop);
+	if (stop > 0) n = std::min(n, stop);
 	std::string printme;
 	for (int i=start; i<n; i++){
 		printme = "--- "+title+" > vec[" + std::to_string(i) + "] = "+ std::to_string( vec->at(i) );
