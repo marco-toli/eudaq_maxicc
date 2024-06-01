@@ -100,7 +100,7 @@ void GetDatapath(FILE* f_ini, Config_t* WDcfg) {
 		if (ret == 0)
 			strcpy(WDcfg->DataFilePath, mchar);
 		else {
-			Con_printf("LCSw", "WARNING: DataFilePath %s cannot be created, default .DataFiles folder is used\n", mchar);
+			Con_printf("LCSw", "WARNING: DataFilePath: %s cannot be created, default .DataFiles folder is used\n", mchar);
 			strcpy(WDcfg->DataFilePath, "DataFiles");
 		}
 	}
@@ -267,7 +267,7 @@ float GetTime(FILE *f_ini, char *tu)
 }
 
 // ---------------------------------------------------------------------------------
-// Description: Read a value from the conig file followed by an optional time unit (V, mV, uV)
+// Description: Read a value from the conig file followed by an optional voltage unit (V, mV, uV)
 //              and convert it in a voltage expressed in volts 
 // Inputs:		f_ini: config file
 // Outputs:		-
@@ -299,7 +299,7 @@ float GetVoltage(FILE *f_ini)
 }
 
 // ---------------------------------------------------------------------------------
-// Description: Read a value from the conig file followed by an optional time unit (A, mA, uA)
+// Description: Read a value from the conig file followed by an optional current unit (A, mA, uA)
 //              and convert it in a current expressed in mA 
 // Inputs:		f_ini: config file
 // Outputs:		-
@@ -343,6 +343,40 @@ float GetCurrent(FILE *f_ini)
 	}
 }
 
+// ---------------------------------------------------------------------------------
+// Description: Read a value from the conig file followed by an optional byte unit (B, MB, GB)
+//              and convert it in Bytes
+// Inputs:		f_ini: config file
+// Outputs:		-
+// Return:		memory size value expressed in Bytes. Minimum value allowed 1 kB
+// ---------------------------------------------------------------------------------
+float GetBytes(FILE* f_ini)
+{
+	float var;
+	long fp;
+	char str[100];
+	float minSize = 1e3; // 1 kB
+
+	int val0 = fscanf(f_ini, "%f", &var);
+	if (var == -1) return var; // DISABLED
+	// try to read the unit from the config file (string)
+	fp = ftell(f_ini);  // save current pointer before "str"
+	int val1 = fscanf(f_ini, "%s", str);  // read string "str"
+	ValidUnits = 1;
+	if (streq(str, "TB"))		return (float)((var * 1e12 > minSize) ? var * 1e12 : minSize);
+	else if (streq(str, "GB"))	return (float)((var * 1e9 > minSize) ? var * 1e9 : minSize);
+	else if (streq(str, "MB"))	return (float)((var * 1e6 > minSize) ? var * 1e6 : minSize);
+	else if (streq(str, "kB"))	return (float)((var * 1e3 > minSize) ? var * 1e3 : minSize);
+	else if (streq(str, "B"))	return (float)((var > minSize) ? var : minSize);
+	else if (val1 != 1 || streq(str, "#")) {	// no units, assumed Byte
+		fseek(f_ini, fp, SEEK_SET); // move pointer back to beginning of "str" and use it again for next parsing
+		return (var > 1e3) ? var : minSize;
+	} else {	// wrong units, raise warning
+		ValidUnits = 0;
+		fseek(f_ini, fp, SEEK_SET); // move pointer back to beginning of "str" and use it again for next parsing
+		return (var > minSize) ? var : minSize;  // no units specified in the config file; assuming bytes
+	}
+}
 
 // ---------------------------------------------------------------------------------
 // Description: Set a parameter (individual board or broadcast) to a given integer value 
@@ -444,8 +478,7 @@ void LoadExtCfgFile(FILE* f_ini, Config_t* WDcfg) {	// DNIN: The first initializ
 			ValidParameterValue = 1;
 			ValidParameterName = 1;
 		} else {
-			Con_printf("LCSm", "Macro file \"%s\" not found.", nfile);
-			ValidParameterValue = 0;
+			Con_printf("LCSw", "WARNING: Loading Macro: Macro file \"%s\" not found\n", nfile);
 		}
 	}
 
@@ -505,6 +538,10 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 		WDcfg->TempSensCoeff[2] = 0;
 		WDcfg->EnLiveParamChange = 1;
 		WDcfg->AskHVShutDownOnExit = 1;
+		WDcfg->MaxOutFileSize = 1e9; // 1 GB
+		WDcfg->EnableRawDataRead = 0;
+		WDcfg->EnableMaxFileSize = 0;
+		WDcfg->Range_14bit = 0;
 
 		for (b = 0; b < MAX_NBRD; b++) {
 			WDcfg->TD_CoarseThreshold[b] = 0;	// new
@@ -598,6 +635,7 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 		if (streq(str, "DwellTime"))			sprintf(str, "PtrgPeriod");
 		if (streq(str, "TrgTimeWindow"))		sprintf(str, "TstampCoincWindow");
 		if (streq(str, "Hit_HoldOff"))			sprintf(str, "Trg_HoldOff");
+		if (streq(str, "PairedCnt_CoincWin"))	sprintf(str, "ChTrg_Width");
 
  		if (streq(str, "Open"))	{
 			if (brd==-1) {
@@ -647,13 +685,13 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 			else if	(streq(str1, "TIMING_CSTOP"))		WDcfg->AcquisitionMode = ACQMODE_TIMING_CSTOP;
 			else if	(streq(str1, "TIMING_STREAMING"))	WDcfg->AcquisitionMode = ACQMODE_TIMING_STREAMING;
 			else if	(streq(str1, "WAVEFORM"))			WDcfg->AcquisitionMode = ACQMODE_WAVE;
-			else 	Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);        
+			else 	Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);
 		}
 		if (streq(str, "StartRunMode")) {
 			fscanf(f_ini, "%s", str1);
 			if		(streq(str1, "MANUAL"))			WDcfg->StartRunMode = STARTRUN_ASYNC;  // keep "MANUAL" option for backward compatibility
 			else if	(streq(str1, "ASYNC"))			WDcfg->StartRunMode = STARTRUN_ASYNC;  
-			else if	(streq(str1, "CHAIN_T0"))		WDcfg->StartRunMode = STARTARUN_CHAIN_T0;  
+			else if	(streq(str1, "CHAIN_T0"))		WDcfg->StartRunMode = STARTRUN_CHAIN_T0;  
 			else if	(streq(str1, "CHAIN_T1"))		WDcfg->StartRunMode = STARTRUN_CHAIN_T1;  
 			else if	(streq(str1, "TDL"))			WDcfg->StartRunMode = STARTRUN_TDL;  
 			else 	Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);
@@ -684,6 +722,7 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 			else if	(streq(str1, "OR32_AND2"))		WDcfg->TriggerLogic = 2;
 			else if	(streq(str1, "MAJ64"))			WDcfg->TriggerLogic = 4;
 			else if	(streq(str1, "MAJ32_AND2"))		WDcfg->TriggerLogic = 5;
+			else if	(streq(str1, "OR_QUAD"))		WDcfg->TriggerLogic = 6;
 			else 	Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);
 		}
 		if (streq(str, "TrefSource")) {
@@ -739,6 +778,14 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 			if		(streq(str1, "DISABLED"))		WDcfg->EventBuildingMode = EVBLD_DISABLED;
 			else if	(streq(str1, "TRGTIME_SORTING"))WDcfg->EventBuildingMode = EVBLD_TRGTIME_SORTING;
 			else if	(streq(str1, "TRGID_SORTING"))	WDcfg->EventBuildingMode = EVBLD_TRGID_SORTING;
+			else 	Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);
+		}
+		if (streq(str, "DataAnalysis")) {
+			fscanf(f_ini, "%s", str1);
+			if (streq(str1, "NONE") || streq(str1, "DISABLED"))	WDcfg->DataAnalysis = 0;
+			else if (streq(str1, "CNT_ONLY"))		WDcfg->DataAnalysis = DATA_ANALYSIS_CNT;
+			else if (streq(str1, "ALL"))			WDcfg->DataAnalysis = DATA_ANALYSIS_CNT | DATA_ANALYSIS_HISTO | DATA_ANALYSIS_MEAS;
+			else if (streq(str1, "MASK"))			fscanf(f_ini, "%x", &WDcfg->DataAnalysis);
 			else 	Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);
 		}
 		if (streq(str, "T0_Out")) {
@@ -970,6 +1017,19 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 			if (streq(str1, "DISABLED"))			WDcfg->SupprZeroCntListFile = 0;
 			else if (streq(str1, "ENABLED"))		WDcfg->SupprZeroCntListFile = 1;
 		}
+		if (streq(str, "OF_ListLL")) {
+			fscanf(f_ini, "%s", str1);
+			if (streq(str1, "DISABLED")) {
+				WDcfg->EnableRawDataRead = 0;
+				WDcfg->OutFileEnableMask = SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_LL, 0);
+			} else if (streq(str1, "SAVE")) {
+				WDcfg->EnableRawDataRead = 0;
+				WDcfg->OutFileEnableMask = SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_LL, 1);
+			} else if (streq(str1, "LOAD")) {
+				WDcfg->EnableRawDataRead = 1;
+				WDcfg->OutFileEnableMask = SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_LL, 0);
+			} else Con_printf("LCSw", "WARNING: %s: invalid setting %s\n", str, str1);	
+		}
 
 		if (streq(str, "DataFilePath"))				GetDatapath(f_ini, WDcfg);
 		if (streq(str, "EHistoNbin"))				WDcfg->EHistoNbin			= GetNbin(f_ini);
@@ -985,10 +1045,15 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 		if (streq(str, "DebugLogMask"))				WDcfg->DebugLogMask			= GetHex(f_ini);
 		if (streq(str, "EnLiveParamChange"))		WDcfg->EnLiveParamChange	= GetInt(f_ini);
 		if (streq(str, "OutFileEnableMask"))		WDcfg->OutFileEnableMask	= GetHex(f_ini);
+		if (streq(str, "OF_EnMaxSize"))				WDcfg->EnableMaxFileSize	= GetInt(f_ini);
+		if (streq(str, "OF_MaxSize"))				WDcfg->MaxOutFileSize		= GetBytes(f_ini);
+		if (streq(str, "EnableRawDataRead"))		WDcfg->EnableRawDataRead	= GetInt(f_ini);
 		if (streq(str, "EnableToT"))				WDcfg->EnableToT			= GetInt(f_ini);
-		if (streq(str, "OF_RawBin"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_DATA_BIN, GetInt(f_ini));
-		if (streq(str, "OF_RawAscii"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_DATA_ASCII, GetInt(f_ini));
+		//if (streq(str, "OF_ListLL"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_LL, GetInt(f_ini));
+		//if (streq(str, "OF_RawBin"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_DATA_BIN, GetInt(f_ini));
+		//if (streq(str, "OF_RawAscii"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_DATA_ASCII, GetInt(f_ini));
 		if (streq(str, "OF_ListBin"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_LIST_BIN, GetInt(f_ini));
+		if (streq(str, "OF_ListCSV"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_LIST_CSV, GetInt(f_ini));
 		if (streq(str, "OF_ListAscii"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_LIST_ASCII, GetInt(f_ini));
 		if (streq(str, "OF_Sync"))					WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_SYNC, GetInt(f_ini));
 		if (streq(str, "OF_SpectHisto"))			WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_SPECT_HISTO, GetInt(f_ini));
@@ -996,15 +1061,17 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 		if (streq(str, "OF_ToTHisto"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_TOT_HISTO, GetInt(f_ini));
 		if (streq(str, "OF_Staircase"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_STAIRCASE, GetInt(f_ini));
 		if (streq(str, "OF_RunInfo"))				WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RUN_INFO, GetInt(f_ini));
+		if (streq(str, "OF_ServiceInfo"))			WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_SERVICE_INFO, GetInt(f_ini));
 		if (streq(str, "OF_MCS"))					WDcfg->OutFileEnableMask	= SETBIT(WDcfg->OutFileEnableMask, OUTFILE_MCS_HISTO, GetInt(f_ini));
 		if (streq(str, "TstampCoincWindow"))		WDcfg->TstampCoincWindow	= (uint32_t)GetTime(f_ini, "ns");
 		if (streq(str, "PresetTime"))				WDcfg->PresetTime			= GetTime(f_ini, "s");
 		if (streq(str, "PresetCounts"))				WDcfg->PresetCounts			= GetInt(f_ini);
-		if (streq(str, "TrefWindow"))				WDcfg->TrefWindow			= (uint32_t)GetTime(f_ini, "ns");
+		if (streq(str, "TrefWindow"))				WDcfg->TrefWindow			= GetTime(f_ini, "ns");
 		if (streq(str, "TrefDelay"))				WDcfg->TrefDelay			= GetTime(f_ini, "ns");
-		if (streq(str, "PtrgPeriod"))				WDcfg->PtrgPeriod			= (uint32_t)GetTime(f_ini, "ns");
+		if (streq(str, "PtrgPeriod"))				WDcfg->PtrgPeriod			= GetTime(f_ini, "ns");
 		if (streq(str, "Trg_HoldOff"))				WDcfg->Trg_HoldOff			= (uint32_t)GetTime(f_ini, "ns");
-		if (streq(str, "PairedCnt_CoincWin"))		WDcfg->PairedCnt_CoincWin	= (uint32_t)GetTime(f_ini, "ns");
+		if (streq(str, "ChTrg_Width"))				WDcfg->ChTrg_Width			= (uint32_t)GetTime(f_ini, "ns");
+		if (streq(str, "Tlogic_Width"))				WDcfg->Tlogic_Width			= (uint32_t)GetTime(f_ini, "ns");
 		if (streq(str, "TestPulseAmplitude"))		WDcfg->TestPulseAmplitude	= GetInt(f_ini);
 		if (streq(str, "WaveformLength"))			WDcfg->WaveformLength		= GetInt(f_ini);
 		if (streq(str, "Range_14bit"))				WDcfg->Range_14bit			= GetInt(f_ini);
@@ -1028,6 +1095,7 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 		if (streq(str, "EnableServiceEvents"))      WDcfg->EnableServiceEvents	= GetInt(f_ini);
 		if (streq(str, "EnableCntZeroSuppr"))		WDcfg->EnableCntZeroSuppr	= GetInt(f_ini);
 		if (streq(str, "AskHVShutDownOnExit"))		WDcfg->AskHVShutDownOnExit  = GetInt(f_ini);
+		if (streq(str, "Enable_2nd_tstamp"))		WDcfg->Enable_2nd_tstamp = GetInt(f_ini);
 
 		if (streq(str, "ZS_Threshold_LG"))			SetChannelParam(WDcfg->ZS_Threshold_LG,				GetInt(f_ini));
 		if (streq(str, "ZS_Threshold_HG"))			SetChannelParam(WDcfg->ZS_Threshold_HG,				GetInt(f_ini));
@@ -1046,7 +1114,7 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 		if (streq(str, "HV_Vbias"))					SetBoardParamFloat(WDcfg->HV_Vbias,					GetVoltage(f_ini));
 		if (streq(str, "HV_Imax"))					SetBoardParamFloat(WDcfg->HV_Imax,					GetCurrent(f_ini));  // Imax is expressed in mA
 			
-		if (streq(str, "Load"))					LoadExtCfgFile(f_ini, WDcfg);
+		if (streq(str, "Load"))						LoadExtCfgFile(f_ini, WDcfg);
 
 		if (!ValidParameterName || !ValidParameterValue || !ValidUnits) {
 			if (!ValidUnits && ValidParameterValue)
@@ -1056,6 +1124,32 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 			fgets(str, (int)strlen(str)-1, f_ini);
 		}
 	}
+
+	// Rise Warnings for specific parameters
+	if (WDcfg->EnableRawDataRead && WDcfg->StopRunMode != STOPRUN_MANUAL) {
+		Con_printf("LCSw", "WARNING: Manual Stop Run must be set when Raw Data are processed\n");
+	}
+	char w_msg[1000] = "";
+	char w_val[1000] = "HV_Vbias:";
+	for (int b = 0; b < WDcfg->NumBrd; ++b) {
+		if (WDcfg->HV_Vbias[b] < 20) {
+			sprintf(w_msg, "%s WARNING: HV bias : HV bias board%d out of lower bound (20 V, 85 V). HV bias value set to 20\n", w_msg, b);
+			WDcfg->HV_Vbias[b] = 20;
+			sprintf(w_val, "%s%d %2.0f,", w_val, b, WDcfg->HV_Vbias[b]);
+			if (SockConsole) Con_printf("SM", "HV_Vbias:%f", WDcfg->HV_Vbias[b]);
+		} else if (WDcfg->HV_Vbias[b] > 85) {
+			sprintf(w_msg, "%s WARNING: HV bias : HV bias board%d out of lower bound (20 V, 85 V). HV bias value set to 85\n", w_msg, b);
+			WDcfg->HV_Vbias[b] = 85;
+			sprintf(w_val, "%s%d %2.0f,", w_val, b, WDcfg->HV_Vbias[b]);
+		}
+	}
+	if (strlen(w_msg) > 0) {
+		Con_printf("LCSw", "%s", w_msg);
+		w_msg[strlen(w_msg) - 1] = '\0';
+		if (SockConsole) Con_printf("SM", "%s\n", w_val);
+	}
+
+	if (!fcall) return 0; // The code below must be executed just on the first call
 
 	if (WDcfg->EHistoNbin > (1 << ENERGY_NBIT))	WDcfg->EHistoNbin = (1 << ENERGY_NBIT);
 	if (WDcfg->ToAHistoNbin > (1 << TOA_NBIT))	WDcfg->ToAHistoNbin = (1 << TOA_NBIT);	// DNIN: misleading. This is just for plot visualization
@@ -1086,6 +1180,16 @@ int ParseConfigFile(FILE* f_ini, Config_t* WDcfg, bool fcall)
 			ParseConfigFile(pcfg, WDcfg, 0);
 			fclose(pcfg);
 			PostConfigDone = 0;
+		}
+	}
+
+	// Set Reading LLData if offline is selected
+	for (i = 0; i < WDcfg->NumBrd; ++i) {
+		if (strstr(WDcfg->ConnPath[i], "offline") != NULL) {
+			WDcfg->EnableRawDataRead = 1;
+			WDcfg->OutFileEnableMask = SETBIT(WDcfg->OutFileEnableMask, OUTFILE_RAW_LL, 0);
+			WDcfg->EnableJobs = 0;
+			break;
 		}
 	}
 

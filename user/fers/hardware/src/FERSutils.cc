@@ -367,7 +367,7 @@ void ManualController(int handle)
 						FILE* reg = fopen(fname, "r");
 						FILE* PLL_reg = fopen("D:\\work\\a5203\\PLL\\PLL_read_reg.txt", "w");
 						if (reg == NULL) {
-							printf("ERR: can't open %s", fname);
+							printf(FONT_STYLE_BOLD COLOR_RED "ERR: can't open %s" COLOR_RESET, fname);
 						} else {
 							devaddr = (PLLindex == 0) ? I2C_ADDR_PLL0 : I2C_ADDR_PLL1;
 							while (!feof(reg)) {
@@ -376,7 +376,7 @@ void ManualController(int handle)
 								if (line[0] != '0') continue;
 								ret |= FERS_I2C_ReadRegister(handle, devaddr, addr, &data_r);
 								if (ret < 0) {
-									printf("Error in read register 0x%04X\n", addr);
+									printf(FONT_STYLE_BOLD COLOR_RED "Error in read register 0x%04X\n" COLOR_RESET, addr);
 									break;
 								}
 								fprintf(PLL_reg, "0x%04X,0x%02X\n", addr, data_r);
@@ -535,7 +535,8 @@ int AcquirePedestals(int handle, uint16_t *pedestalLG, uint16_t *pedestalHG)
 	FERS_ReadRegister(handle, a_run_mask, &rmask);  
 	FERS_WriteRegister(handle, a_run_mask, 1);  // swrun
 	FERS_WriteRegister(handle, a_acq_ctrl, ACQMODE_SPECT);
-	FERS_WriteRegister(handle, a_trg_mask, 0x1);  // SW Trigger
+	FERS_WriteRegister(handle, a_trg_mask, 0x21);  // SW Trigger + PTRG
+	FERS_WriteRegister(handle, a_dwell_time, (uint32_t)(1e6 / CLK_PERIOD));  // 1 ms
 	FERS_WriteRegisterSlice(handle, a_acq_ctrl, 12, 13, GAIN_SEL_BOTH);  // Set Gain Selection = Both
 	FERS_EnablePedestalCalibration(handle, 0);
 
@@ -546,7 +547,7 @@ int AcquirePedestals(int handle, uint16_t *pedestalLG, uint16_t *pedestalHG)
 	nn = 0;
 	while (nn < CALIB_NCYC) {
 		double ts;
-		FERS_SendCommand(handle, CMD_TRG);  // SW trigger
+		//FERS_SendCommand(handle, CMD_TRG);  // SW trigger
 		FERS_GetEventFromBoard(handle, &dtq, &ts, &Event, &nb);
 		if (nb>0) {
 			SpectEvent_t *Ev = (SpectEvent_t  *)Event;
@@ -611,10 +612,10 @@ int ScanThreshold(int handle)
 		thr = start + s * step;
 		FERS_WriteRegister(handle, a_qd_coarse_thr, thr);	// Threshold for Q-discr
 		FERS_WriteRegister(handle, a_td_coarse_thr, thr);	// Threshold for T-discr
-		FERS_WriteRegister(handle, a_scbs_ctrl, 0x200);		// set citiroc index = 1
+		FERS_WriteRegister(handle, a_scbs_ctrl, 0x000);		// set citiroc index = 0
 		FERS_SendCommand(handle, CMD_CFG_ASIC);
 		Sleep(20);
-		FERS_WriteRegister(handle, a_scbs_ctrl, 0x000);		// set citiroc index = 0
+		FERS_WriteRegister(handle, a_scbs_ctrl, 0x200);		// set citiroc index = 1
 		FERS_SendCommand(handle, CMD_CFG_ASIC);
 		Sleep(20);
 		FERS_WriteRegister(handle, a_trg_mask, 0x20); // enable periodic trigger

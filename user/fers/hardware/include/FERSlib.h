@@ -14,12 +14,13 @@
 * software, documentation and results solely at his own risk.
 ******************************************************************************/
 
+#define FERS_5202
 
 #ifndef _FERSLIB_H
 #define _FERSLIB_H				// Protect against multiple inclusion
-#define FERS_5202				// Using 5202
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <math.h>
 #include "MultiPlatform.h"
 
@@ -28,6 +29,7 @@
 #elif FERS_5203
 #include "FERS_Registers_5203.h"
 #endif
+#include "FERS_Registers_5215.h"
 
 #ifndef WIN32
 #include <stdbool.h>
@@ -75,6 +77,7 @@
 #define DBLOG_QUEUES				0x0010		// Enable messages from queues (push and pop) used in event sorting
 #define DBLOG_RAW_DECODE			0x0020		// Enable messages from raw data decoding
 #define DBLOG_LL_READDUMP			0x0040		// Enable low level read data to dump raw data (from usb, eth and tdl) into a text file
+#define DBLOG_TEMP_DUMP				0x0080		// Enable temperature and HV log message
 
 #define ENABLE_FERSLIB_LOGMSG		(DebugLogs & DBLOG_FERSLIB_MSG)
 
@@ -90,6 +93,8 @@
 #define ROSTATUS_EMPTYING			2	// boards stopped, reading last data in the pipes
 #define ROSTATUS_FLUSHING			3	// flushing old data (clear)
 
+#define RAWDATA_REPROCESS_FINISHED	4	// end of offline raw data reprocessing
+
 // Error Codes
 #define FERSLIB_ERR_GENERIC				-1
 #define FERSLIB_ERR_COMMUNICATION		-2
@@ -103,7 +108,7 @@
 #define FERSLIB_ERR_PEDCALIB_NOT_FOUND	-10
 #define FERSLIB_ERR_INVALID_FWFILE		-11
 #define FERSLIB_ERR_UPGRADE_ERROR		-12
-#define FERSLIB_ERR_INVLID_PARAM		-13
+#define FERSLIB_ERR_INVALID_PARAM		-13
 #define FERSLIB_ERR_NOT_APPLICABLE		-14
 #define FERSLIB_ERR_TDL_ERROR			-15
 #define FERSLIB_ERR_QUEUE_OVERRUN		-16
@@ -143,7 +148,7 @@
 
 // Start/Stop Acquisition Modes
 #define STARTRUN_ASYNC				0
-#define STARTARUN_CHAIN_T0			1
+#define STARTRUN_CHAIN_T0			1
 #define STARTRUN_CHAIN_T1			2
 #define STARTRUN_TDL				3
 
@@ -176,8 +181,13 @@
 
 #define FLASH_PAGE_SIZE				528	// flash page size for AT54DB321
 #define FLASH_BIC_PAGE				0	// flash page with Board IDcard
+#ifdef FERS_5202
 #define FLASH_PEDCALIB_PAGE			4	// flash page with Pedestal calibration
 #define FLASH_PEDCALIB_BCK_PAGE		5	// flash page with Pedestal calibration (backup)
+#elif FERS_5203
+#define FLASH_THR_OFFS_PAGE			4	// flash page with Threshold Offset calibration
+#define FLASH_THR_OFFS_BCK_PAGE		5	// flash page with Threshold Offset calibration (backup)
+#endif
 
 // Handles and indexing
 #define FERS_INDEX(handle)				((handle) & 0xFF)		// Board Index
@@ -189,6 +199,7 @@
 #define FERS_NODE(handle)				((handle >> 20) & 0xF)
 #define FERS_CHAIN(handle)				((handle >> 24) & 0xF)
 #define FERS_CNCINDEX(handle)			((handle >> 30) & 0xF)
+#define FERS_CNC_HANDLE(handle)			(0x80000 | ((handle >> 30) & 0xF)) // returns the CNC handle to which a FERS unit is connected
 
 // Fimrware upgrade via TDL
 #define FUP_BA							0xFF000000
@@ -199,14 +210,12 @@
 #define POLY							0x82f63b78
 
 // Other macros
-/*
-#ifndef max
-#define max(a,b) ((a) > (b) ? (a) : (b))
-#endif
-#ifndef min 
-#define min(a,b) ((a) < (b) ? (a) : (b))
-#endif
-*/
+//#ifndef max
+//#define max(a,b) ((a) > (b) ? (a) : (b))
+//#endif
+//#ifndef min 
+//#define min(a,b) ((a) < (b) ? (a) : (b))
+//#endif
 
 //******************************************************************
 // TDL-chain Info Struct
@@ -226,11 +235,12 @@ typedef struct {
 //******************************************************************
 typedef struct {
 	uint32_t pid;			// Board PID (5 decimal digits)
-	uint8_t PCBrevision;	// PCB revision 
+	char PCBrevision[16];	// PCB revision 
 	char ModelCode[16];		// e.g. WDT5215XAAAA
 	char ModelName[16];		// e.g. DT5215
 	char FPGA_FWrev[20];	// FPGA FW revision 
 	char SW_rev[20];		// Software Revision (embedded ARM)
+	char MACaddr_10GbE[20];	// MAC address of 10 GbE
 	uint16_t NumLink;		// Number of links
 	FERS_TDL_ChainInfo_t ChainInfo[8];	// TDL Chain info
 } FERS_CncInfo_t;
@@ -258,6 +268,7 @@ typedef struct {
 // Spectroscopy Event (with or without timing)
 typedef struct {
 	double tstamp_us;
+	double rel_tstamp_us;
 	uint64_t trigger_id;
 	uint64_t chmask;
 	uint64_t qdmask;
@@ -270,6 +281,7 @@ typedef struct {
 // Counting Event
 typedef struct {
 	double tstamp_us;
+	double rel_tstamp_us;
 	uint64_t trigger_id;
 	uint64_t chmask;
 	uint32_t counts[64];
@@ -290,6 +302,7 @@ typedef struct {
 // List Event (timing mode only)
 typedef struct {
 	uint16_t nhits;
+	double Tref_tstamp;
 	uint8_t  channel[MAX_LIST_SIZE];
 	uint32_t tstamp[MAX_LIST_SIZE];
 	uint16_t ToT[MAX_LIST_SIZE];
@@ -300,11 +313,14 @@ typedef struct {
 	uint64_t update_time;
 	double   tstamp_us;
 	uint16_t pkt_size;
+	uint8_t  version;
 	uint8_t  format;
 	uint32_t ch_trg_cnt[FERSLIB_MAX_NCH];
 	uint32_t q_or_cnt;
 	uint32_t t_or_cnt;
-	float tempFPGA;
+	uint16_t Status;			// Acq Status Register
+	float tempFPGA;				// temperature of FPGA core
+	float tempBoard;			// temperature of the board (near uC PIC)
 	float tempHV;
 	float tempDetector;
 	float hv_Vmon;
@@ -344,6 +360,7 @@ typedef struct {
 	uint32_t ReadoutFlags;		// Readout Flags from picoTDC and FPGA
 	uint32_t TotTrg_cnt;		// Total triggers counter
 	uint32_t RejTrg_cnt;		// Rejected triggers counter
+	uint32_t SupprTrg_cnt;		// Zero suppressed triggers counter
 } ServEvent_t;
 
 #endif
@@ -365,8 +382,19 @@ extern FERS_BoardInfo_t *FERS_BoardInfo[FERSLIB_MAX_NBRD];	// pointers to the bo
 extern int FERS_TotalAllocatedMem;							// Total allocated memory 
 extern int FERS_ReadoutStatus;								// Status of the readout processes (idle, running, flushing, etc...)
 extern int FERS_RunningCnt;									// Num of running boards 
+extern uint16_t MaxEnergyRange;								// Max energy given from ADCs (13 or 14 bits)
 extern mutex_t FERS_RoMutex;								// Mutex for the access to FERS_ReadoutStatus
 extern int DebugLogs;										// Debug Logs
+extern uint8_t EnableRawData;								// Enable Low Level data saving
+extern uint8_t ProcessRawData;								// Enable ReadingOut the RawData file saved
+extern uint8_t EnableMaxSizeFile;							// Enable the Max size for Raw Data file saving
+extern float MaxSizeRawDataFile;							// Max Size for LLData saving
+extern char RawDataFilename[FERSLIB_MAX_NBRD][500];			// Rawdata Filename (eth, usb connection)
+extern char RawDataFilenameTdl[FERSLIB_MAX_NCNC][500];		// Rawdata Filename (tdl connection)
+//char PedestalsFilename[500];								// Pedestals filename for offline reprocessing
+extern int FERS_Offline;									// Offline connection for Raw Data reading
+extern char FERS_MsgString[500];							// Messages from FERSlib
+
 
 // Macros for getting main parameters of the FERS units 
 #define FERS_Model(handle)				((FERS_INDEX(handle) >= 0) ? FERS_BoardInfo[FERS_INDEX(handle)]->Model : 0)
@@ -386,6 +414,13 @@ extern int DebugLogs;										// Debug Logs
 // *****************************************************************
 int FERS_LibMsg(char *fmt, ...);
 int FERS_SetDebugLogs(int DebugEnableMask);
+int FERS_EnableRawdataWriteFile(int RawDataEnable, char* DataOutputPath, int RunNumber);
+int FERS_EnableLimitRawdataFileSize(uint8_t LimitSizeEnable, float MaxSizeRawOutputFile);
+int FERS_EnableRawdataReadFile(uint8_t ReadRawData);
+//int FERS_SavePedestal(int numBrd);
+//int FERS_LoadPedestal(int numBrd);
+int FERS_OpenRawDataFile(int handle);
+int FERS_CloseRawDataFile(int handle);
 
 // *****************************************************************
 // Open/Close
@@ -398,12 +433,15 @@ int FERS_Reset_IPaddress(int handle);
 int FERS_Get_CncPath(char *dev_path, char *cnc_path);
 int FERS_InitTDLchains(int handle, float DelayAdjust[FERSLIB_MAX_NTDL][FERSLIB_MAX_NNODES]);
 bool FERS_TDLchainsInitialized(int handle);
+int FERS_SetOffline(int offline);
+int FERS_SetBoardInfo(FERS_BoardInfo_t* BrdInfo, int b);
 
 // *****************************************************************
 // Register Read/Write
 // *****************************************************************
 int FERS_ReadRegister(int handle, uint32_t address, uint32_t *data);
 int FERS_WriteRegister(int handle, uint32_t address, uint32_t data);
+int FERS_MultiWriteRegister(int handle, uint32_t* address, uint32_t* data, int ncycle);
 int FERS_WriteRegisterSlice(int handle, uint32_t address, uint32_t start_bit, uint32_t stop_bit, uint32_t data);
 int FERS_SendCommand(int handle, uint32_t cmd);
 int FERS_SendCommandBroadcast(int *handle, uint32_t cmd, uint32_t delay);
@@ -421,7 +459,9 @@ int FERS_EnablePedestalCalibration(int handle, int enable);
 int FERS_GetChannelPedestalBeforeCalib(int handle, int ch, uint16_t *PedLG, uint16_t *PedHG);
 int FERS_Get_FPGA_Temp(int handle, float *temp);
 int FERS_Get_Board_Temp(int handle, float* temp);
-#ifdef FERS_5203
+#ifdef FERS_5202
+int FERS_Get_ASIC_Temp(int handle, float* temp); 
+#elif FERS_5203
 int FERS_Get_TDC0_Temp(int handle, float* temp);
 int FERS_Get_TDC1_Temp(int handle, float* temp);
 #endif
@@ -467,6 +507,7 @@ int TDC_DoStartStopMeasurement(int handle, int tdc_id, double *tof_ns);
 // *****************************************************************
 // Data Readout
 // *****************************************************************
+int FERS_SetEnergyBitsRange(uint16_t EnergyRange);
 int FERS_InitReadout(int handle, int ROmode, int *AllocatedSize);
 int FERS_CloseReadout(int handle);
 int FERS_FlushData(int handle);
@@ -480,5 +521,4 @@ int FERS_GetEventFromBoard(int handle, int *DataQualifier, double *tstamp_us, vo
 // *****************************************************************
 int FERS_FirmwareUpgrade(int handle, FILE *fp, void(*ptr)(char *msg, int progress));
 int FERS_CheckBootloaderVersion(int handle, int* isInBootloader, uint32_t* version, uint32_t* release);
-
 #endif

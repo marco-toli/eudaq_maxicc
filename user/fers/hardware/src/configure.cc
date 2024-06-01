@@ -88,7 +88,8 @@ int ConfigureFERS(int handle, int mode)
 	ret |= FERS_WriteRegisterSlice(handle, a_acq_ctrl, 24, 25, WDcfg.Validation_Mode); // 0=disabled, 1=accept, 2=reject
 
 	ret |= FERS_WriteRegisterSlice(handle, a_acq_ctrl, 27, 29, WDcfg.Counting_Mode); // 0=singles, 1=paired_AND
-	ret |= FERS_WriteRegister(handle, a_hit_width, WDcfg.PairedCnt_CoincWin/CLK_PERIOD); // Coinc Window for counting in paired-AND mode
+	ret |= FERS_WriteRegister(handle, a_hit_width, WDcfg.ChTrg_Width/CLK_PERIOD); // Monostable on Citiroc Self triggers => Coinc Window for Trigger logic and counting in paired-AND mode
+	ret |= FERS_WriteRegister(handle, a_tlogic_width, WDcfg.Tlogic_Width/CLK_PERIOD); // Monostable on Trigger Logic Output (0=linear)
 
 	ret |= FERS_WriteRegisterSlice(handle, a_acq_ctrl, 26, 26, WDcfg.TrgIdMode); // Trigger ID: 0=trigger counter, 1=validation counter
 
@@ -116,11 +117,15 @@ int ConfigureFERS(int handle, int mode)
 	// Set Trigger Source
 	ret |= FERS_WriteRegister(handle, a_trg_mask, WDcfg.TriggerMask);  
 
+	// enable 2nd time stamp (relative to Tref)
+	if (WDcfg.Enable_2nd_tstamp)
+		ret |= FERS_WriteRegisterSlice(handle, a_acq_ctrl2, 0, 0, 1);
+
 	// Set Run Mask
 	rundelay = (WDcfg.NumBrd - FERS_INDEX(handle) - 1) * 4;
 	if (WDcfg.StartRunMode == STARTRUN_ASYNC) {
 		ret |= FERS_WriteRegister(handle, a_run_mask, 0x01); 
-	} else if (WDcfg.StartRunMode == STARTARUN_CHAIN_T0) {
+	} else if (WDcfg.StartRunMode == STARTRUN_CHAIN_T0) {
 		if (FERS_INDEX(handle) == 0) {
 			ret |= FERS_WriteRegister(handle, a_run_mask, (deskew << 16) | (rundelay << 8) | 0x01); 
 			ret |= FERS_WriteRegister(handle, a_t0_out_mask, 1 << 10);  // set T0-OUT = RUN_SYNC

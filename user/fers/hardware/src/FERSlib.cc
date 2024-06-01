@@ -51,12 +51,23 @@ int EnablePedCal= 1;									// 0 = disable calibration, 1 = enable calibration
 int FERS_TotalAllocatedMem = 0;							// Total allocated memory 
 int FERS_ReadoutStatus = 0;								// Status of the readout processes (idle, running, flushing, etc...)
 int FERS_RunningCnt = 0;								// Num of running boards 
+int FERS_Offline = 0;									// Offline connection for Raw Data reading
+uint16_t MaxEnergyRange;								// Max energy given from ADCs (13 or 14 bits)
 #ifdef _WIN32
 mutex_t FERS_RoMutex = NULL;							// Mutex for the access to FERS_ReadoutStatus
 #else
 mutex_t FERS_RoMutex;									// Mutex for the access to FERS_ReadoutStatus
 #endif
 int DebugLogs = 0;										// Debug Logs
+uint8_t EnableRawData = 0;								// Enable LowLevel data saving
+uint8_t ProcessRawData = 0;								// Enable ReadingOut the RawData file saved
+uint8_t EnableMaxSizeFile;								// Enable the Max size for Raw Data file saving
+float MaxSizeRawDataFile = 0;							// Max Size for LLData saving
+char RawDataFilename[FERSLIB_MAX_NBRD][500];			// Rawdata Filename (eth, usb connection)
+char RawDataFilenameTdl[FERSLIB_MAX_NCNC][500];			// Rawdata Filename (tdl connection)
+char PedestalsFilename[500];							// Pedestals filename for offline reprocessing
+char FERS_MsgString[500];
+
 
 
 // *********************************************************************************************************
@@ -79,6 +90,7 @@ int FERS_LibMsg(char *fmt, ...)
 	va_end(args);
 
 	//printf("%s", msg); // Write to console
+	sprintf(FERS_MsgString, "%s", msg); // Write to Message Link
 	if (LibLog != NULL) {
 		fprintf(LibLog, "%s", msg); // Write to Log File
 		fflush(LibLog);
@@ -101,6 +113,125 @@ int FERS_SetDebugLogs(int DebugEnableMask) {
 	DebugLogs = DebugEnableMask;
 	return 0;
 }
+
+// --------------------------------------------------------------------------------------------------------- 
+// Description: Enable Raw Data output file writing, with open and close file
+// Inputs:		DebugEnableMask: RawData Writing enable, Max size of RawData file, DataFilePath, RunNumber
+// Return:		0=OK, negative number = error code
+// --------------------------------------------------------------------------------------------------------- 
+int FERS_EnableRawdataWriteFile(int RawDataEnable, char* DataOutputPath, int RunNumber) 
+{
+	EnableRawData = RawDataEnable;
+	for (int j = 0; j < FERSLIB_MAX_NBRD; ++j)
+		sprintf(RawDataFilename[j], "%sRawData_b%d_Run%d", DataOutputPath, j, RunNumber);
+	for (int j = 0; j < FERSLIB_MAX_NCNC; ++j)
+		sprintf(RawDataFilenameTdl[j], "%sRawData_cnc%d_Run%d", DataOutputPath, j, RunNumber);
+
+	//sprintf(PedestalsFilename, "%sPedestals_Run%d.txt", DataOutputPath, RunNumber);
+
+	return 0;
+}
+
+// Enable and set the max size of output files
+int FERS_EnableLimitRawdataFileSize(uint8_t LimitSizeEnable, float MaxSizeRawOutputFile) 
+{
+	MaxSizeRawDataFile = MaxSizeRawOutputFile;
+	EnableMaxSizeFile = LimitSizeEnable;
+	return 0;
+}
+
+// Enable the raw data processing
+int FERS_EnableRawdataReadFile(uint8_t ReadRawData)
+{
+	ProcessRawData = ReadRawData;
+	return 0;
+}
+
+// Save pedestal values
+//int FERS_SavePedestal(int numBrd) 
+//{		// DNIN: maybe numBrd can be retrieved from value from Library
+//	if (strlen(PedestalsFilename) == 0) {
+//		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[WARNING] Pedestal filename is not define\n");
+//		return -10; // Should be set with a define
+//	}
+//	FILE* tfile;
+//	tfile = fopen(PedestalsFilename, "w");
+//	if (tfile == NULL) {
+//		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[WARNING] Cannot save pedestal values on file. Please, check the output file\n");
+//		return -10; // Should be set with a define
+//	}
+//	int rNum = 0;
+//	sscanf(PedestalsFilename, "Pedestals_Run%d.txt", &rNum);
+//	fprintf(tfile, "# ***************************************\n");
+//	fprintf(tfile, "# Pedestal LG, HG of boards in Run%d\n");
+//	for (int b = 0; b < numBrd; ++b)
+//		fprintf(tfile, "# PID board %d: %" PRIu32 "\n", b, FERS_BoardInfo[b]->pid);
+//	fprintf(tfile, "VALUES\n");
+//	for (int b = 0; b < numBrd; ++b) {
+//		for (int ch = 0; ch < FERSLIB_MAX_NCH; ++ch) {
+//			fprintf(tfile, "pedestal[%d][%d]=%" PRIu16 ",%" PRIu16 "\n", b, ch, PedestalHG[b][ch], PedestalLG[b][ch]);
+//		}
+//	}
+//	return 0;
+//}
+//
+//// Load pedestal values from file
+//int FERS_LoadPedestal(int numBrd)
+//{
+//	if (strlen(PedestalsFilename) == 0) {
+//		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[WARNING] Pedestal filename is not define\n");
+//		return -10; // Should be set with a define
+//	}
+//	FILE* tfile;
+//	tfile = fopen(PedestalsFilename, "r");
+//	if (tfile == NULL) {
+//		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[WARNING] Cannot save pedestal values on file. Please, check the output file\n");
+//		return -10; // Should be set with a define
+//	}
+//
+//	char str[1000];
+//	int header = 1, brd, ch;
+//	uint16_t pedHG, pedLG;
+//	while (!feof(tfile)) {
+//		if (header) fscanf(tfile, "%s", str);
+//		else fscanf(tfile, "pedestal[%d][%d]=%" SCNu16",%" SCNu16, &brd, &ch, &pedLG, &pedHG);
+//		PedestalLG[brd][ch] = pedLG;
+//		PedestalHG[brd][ch] = pedHG;
+//	}
+//	return 0;
+//}
+
+
+// Open Rawdata file to dump raw data
+int FERS_OpenRawDataFile(int handle) 
+{
+	int bidx = FERS_INDEX(handle);
+	int cidx = FERS_CNCINDEX(handle);
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL)
+		LLtdl_OpenRawOutputFile(cidx);
+	else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH)
+		LLeth_OpenRawOutputFile(bidx);
+	else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB)
+		LLusb_OpenRawOutputFile(bidx);
+
+	return 0;
+}
+
+// Close raw data file
+int FERS_CloseRawDataFile(int handle)
+{
+	int bidx = FERS_INDEX(handle);
+	int cidx = FERS_CNCINDEX(handle);
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL)
+		LLtdl_CloseRawOutputFile(cidx);
+	else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH)
+		LLeth_CloseRawOutputFile(bidx);
+	else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB)
+		LLusb_CloseRawOutputFile(bidx);
+
+	return 0;
+}
+
 
 // *********************************************************************************************************
 // Open/Close
@@ -153,7 +284,8 @@ int FERS_OpenDevice(char *path, int *handle)
 				ret = LLtdl_OpenDevice(ss[1], CncIndex);
 			} else if (strstr(path, "usb") != NULL) {  // Usb
 				ret = LLtdl_OpenDevice(ss[1], CncIndex);
-			}
+			} else
+				ret = -1;
 			if (ret < 0) return FERSLIB_ERR_COMMUNICATION;
 			CncConnected[CncIndex] = 1;
 			strcpy(CncPath[CncIndex], cpath);
@@ -179,8 +311,8 @@ int FERS_OpenDevice(char *path, int *handle)
 			sscanf(ss[3], "%d", &chain);
 			sscanf(ss[4], "%d", &node);
 			if ((chain < 0) || (chain >= FERSLIB_MAX_NTDL) || (node < 0) || (node >= FERSLIB_MAX_NNODES)) return FERSLIB_ERR_INVALID_PATH;
-			ret = LLtdl_InitTDLchains(cindex, NULL);
-			if (ret < 0) return ret;
+			/*ret = LLtdl_InitTDLchains(cindex, NULL);  //CTIN: need to reinit chains? Should be already done when the concentrator is open
+			if (ret < 0) return ret;*/
 			if (node >= (int)TDL_NumNodes[cindex][chain]) return FERSLIB_ERR_INVALID_PATH;
 			CncOpenHandles[cindex]++;
 			*handle = (cindex << 30) | (chain << 24) | (node << 20) | FERS_CONNECTIONTYPE_TDL | BoardIndex;
@@ -208,6 +340,9 @@ int FERS_OpenDevice(char *path, int *handle)
 		strcpy(BoardPath[BoardIndex], path);
 		FERS_BoardInfo[BoardIndex] = (FERS_BoardInfo_t*)malloc(sizeof(FERS_BoardInfo_t));
 
+		if (FERS_Offline) return 0;
+
+
 		ret = FERS_ReadBoardInfo(*handle, FERS_BoardInfo[BoardIndex]);
 		if ((ret != 0) && (ret != FERSLIB_ERR_INVALID_BIC)) return ret;
 
@@ -228,6 +363,25 @@ int FERS_OpenDevice(char *path, int *handle)
 		FERS_SendCommand(*handle, CMD_ACQ_STOP);
 
 	}
+	return 0;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Description: Set FERS_Offline variable
+// Inputs:		value of offline variable
+// Return:		0
+// ---------------------------------------------------------------------------------------------------------
+int FERS_SetOffline(int offline)
+{
+	FERS_Offline = offline;
+	return 0;
+}
+
+int FERS_SetBoardInfo(FERS_BoardInfo_t* BrdInfo, int b)
+{
+	if (FERS_BoardInfo[b] == NULL)
+		FERS_BoardInfo[b] = (FERS_BoardInfo_t*)malloc(sizeof(FERS_BoardInfo_t));
+	memcpy(FERS_BoardInfo[b], BrdInfo, sizeof(FERS_BoardInfo_t));
 	return 0;
 }
 
@@ -341,6 +495,22 @@ bool FERS_TDLchainsInitialized(int handle)
 	return LLtdl_TDLchainsInitialized(FERS_CNCINDEX(handle));
 }
 
+
+// --------------------------------------------------------------------------------------------------------- 
+// Description: Set the number of bits the energy is given from ADCs
+// Inputs:		EnergyRangeBits = boolean
+// Return:		0
+// --------------------------------------------------------------------------------------------------------- 
+int FERS_SetEnergyBitsRange(uint16_t EnergyRange)
+{
+	if (!EnergyRange) // 13 bits
+		MaxEnergyRange = (1 << 13) - 1;
+	else // 14 bits
+		MaxEnergyRange = (1 << 14) - 1;
+	return 0;
+}
+
+
 // *********************************************************************************************************
 // Register Read/Write, Send Commands
 // *********************************************************************************************************
@@ -382,6 +552,10 @@ int FERS_WriteRegister(int handle, uint32_t address, uint32_t data) {
 		return LLtdl_CncWriteRegister(FERS_CNCINDEX(handle), address, data);
 	else 
 		return FERSLIB_ERR_INVALID_HANDLE;
+}
+
+int FERS_MultiWriteRegister(int handle, uint32_t* address, uint32_t* data, int ncycle){
+	return LLtdl_MultiWriteRegister(FERS_CNCINDEX(handle), FERS_CHAIN(handle), FERS_NODE(handle), address, data, ncycle);
 }
 
 // --------------------------------------------------------------------------------------------------------- 
@@ -705,10 +879,10 @@ int FERS_ReadConcentratorInfo(int handle, FERS_CncInfo_t *cinfo)
 	ret = LLtdl_GetCncInfo(FERS_CNCINDEX(handle), cinfo);
 	if (ret) return ret;
 	// CTIN: the following info are hard-coded for the moment. Will be read from the concentrator...
-	strcpy(cinfo->ModelCode, "WDT5215XAAAA");
-	strcpy(cinfo->ModelName, "DT5215");
-	cinfo->PCBrevision = 1;
-	cinfo->NumLink = 8;
+	//strcpy(cinfo->ModelCode, "WDT5215XAAAA");
+	//strcpy(cinfo->ModelName, "DT5215");
+	//cinfo->PCBrevision = 1;
+	//cinfo->NumLink = 8;
 	for(i=0; i<8; i++) {
 		ret = LLtdl_GetChainInfo(FERS_CNCINDEX(handle), i, &cinfo->ChainInfo[i]);
 	}
@@ -732,8 +906,6 @@ int FERS_Get_FPGA_Temp(int handle, float *temp) {
 	return ret;
 }
 
-
-#ifdef FERS_5203
 // --------------------------------------------------------------------------------------------------------- 
 // Description: Get board Temperature (between PIC and FPGA)
 // Inputs:		handle = board handle 
@@ -751,6 +923,7 @@ int FERS_Get_Board_Temp(int handle, float* temp) {
 	return ret;
 }
 
+#ifdef FERS_5203
 // --------------------------------------------------------------------------------------------------------- 
 // Description: Get TDC0 Temperature
 // Inputs:		handle = board handle 
@@ -902,7 +1075,7 @@ int FERS_EnablePedestalCalibration(int handle, int enable)
 // --------------------------------------------------------------------------------------------------------- 
 int FERS_GetChannelPedestalBeforeCalib(int handle, int ch, uint16_t *PedLG, uint16_t *PedHG)
 {
-	if ((ch < 0) || (ch > 63)) return FERSLIB_ERR_INVLID_PARAM;
+	if ((ch < 0) || (ch > 63)) return FERSLIB_ERR_INVALID_PARAM;
 	*PedLG = PedestalLG[FERS_INDEX(handle)][ch];
 	*PedHG = PedestalHG[FERS_INDEX(handle)][ch];
 	return 0;
@@ -1211,7 +1384,7 @@ int TDC_WriteReg(int handle, int tdc_id, uint32_t addr, uint32_t data)
 	if (addr <= 0x09)
 		return FERS_WriteRegister(handle, a_tdc_data, ((tdc_id & 1) << 24) | 0x4000 | ((addr & 0xFF) << 8) | (data & 0xFF));
 	else 
-		return FERSLIB_ERR_INVLID_PARAM;
+		return FERSLIB_ERR_INVALID_PARAM;
 }
 
 // --------------------------------------------------------------------------------------------------------- 
@@ -1291,20 +1464,80 @@ int TDC_DoStartStopMeasurement(int handle, int tdc_id, double *tof_ns)
 // Firmware Upgrade
 // *********************************************************
 
+// *********************************************************
+// Firmware Upgrade
+// *********************************************************
+
 static int waitFlashfree(int handle)
 {
 	uint32_t reg_add;
 	uint32_t status;
-	if (FERS_CONNECTIONTYPE(handle) != FERS_CONNECTIONTYPE_TDL)
-		reg_add = 8189;
-	else
+	int8_t tout = -1;
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL)
 		reg_add = FUP_BA + FUP_RESULT_REG;
+	else
+		reg_add = 8189; 
 	do {
 		//Inserire qui un timeout a 5 secondi
+		if (tout >= 0)
+			Sleep(100);
 		FERS_ReadRegister(handle, reg_add, &status);
-	} while (status != 1);
+		++tout;
+	} while (status != 1 && tout < 300);
+	if (tout == 300)
+		return FERSLIB_ERR_UPGRADE_ERROR;
 	return 0;
 }
+
+static int WriteFPGAFirmwareOnFlash(int handle, char *pageText, int textLen, void(*ptr)(char *msg, int progress))
+{
+	uint32_t temp = 0;
+	uint32_t* datarow;  // [8192] ;
+	uint32_t rw = 0;
+	uint32_t rd = 0;
+	uint32_t *i_pageText;
+	const uint32_t chunk_size_byte = 60 * 512 ;
+	const uint32_t n_chunks = (uint32_t)ceil((double)textLen / chunk_size_byte);
+	int ret = 0;
+
+	datarow = (uint32_t*)calloc(8192, sizeof(uint32_t));
+
+	for (int cnk = 0; cnk < (int)n_chunks; cnk++) {
+		i_pageText = (uint32_t*)&(pageText[cnk*chunk_size_byte]);
+		for (int i = 0; i < 8192; i++)
+			datarow[i] = 0;
+
+		for (int i = 0; i < (int)(chunk_size_byte/4); i++)
+			datarow[i] = i_pageText[i];
+	
+		uint32_t cmd = 0xA;
+		datarow[8190] = cnk*chunk_size_byte;
+		datarow[8191] = cmd;
+		const int ChunkSize = 64;
+		for (int i = 0; i < 8192; i += ChunkSize) {
+			if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH)
+				ret |= LLeth_WriteMem(FERS_INDEX(handle), i, (char *)(&datarow[i]), ChunkSize * 4);
+			else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB)
+				ret |= LLusb_WriteMem(FERS_INDEX(handle), i, (char *)(&datarow[i]), ChunkSize * 4);
+		}
+		int ret = waitFlashfree(handle);
+		if (ret < 0) {
+			if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD%02d] Failed firmware upgrade: timeout in waitFlashFree function\n");
+			char err[1024];
+			sprintf(err, "ERROR: failed firmware upgrade: timeout in waitFlashFree function\n");
+			(*ptr)(err, 0);
+			return FERSLIB_ERR_UPGRADE_ERROR;
+		}
+
+
+		if (ptr != NULL) {
+			(*ptr)("", cnk * 100 / n_chunks);
+		}
+	}
+	(*ptr)("", 100);
+	return 0;
+}
+
 
 uint32_t crc32c(uint32_t crc, const unsigned char* buf, size_t len)
 {
@@ -1319,109 +1552,134 @@ uint32_t crc32c(uint32_t crc, const unsigned char* buf, size_t len)
 	return ~crc;
 }
 
-static int WriteFPGAFirmwareOnFlash(int handle, char *pageText, int textLen, void(*ptr)(char *msg, int progress))
-{
-	uint32_t temp;
-	uint32_t* datarow;  // [8192] ;
-	size_t msize;
-	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL)
-		msize = 1024;
-	else
-		msize = 8192;
-	datarow = (uint32_t*)calloc(msize, sizeof(uint32_t));
 
-	uint32_t *i_pageText;
-	const uint32_t chunk_size_byte = 60 * 512 ;
+static int FUP_WriteFPGAFirmwareOnFlash(int handle, char* pageText, int textLen, void(*ptr)(char* msg, int progress))
+{
+	uint32_t temp = 0;
+	uint32_t datarow[1024];
+	uint32_t addrow[1024];
+	uint32_t rw = 0;
+	uint32_t rd = 0;
+	uint32_t* i_pageText;
+	const uint32_t chunk_size_byte = 4 * 512;
 	const uint32_t n_chunks = (uint32_t)ceil((double)textLen / chunk_size_byte);
 	uint32_t crc_R, crc_T;
-
+	int onepercent = n_chunks / 100;
+	int next_p = 1;
 	for (int cnk = 0; cnk < (int)n_chunks; cnk++) {
-		i_pageText = (uint32_t*)&(pageText[cnk*chunk_size_byte]);
-		for (int i = 0; i < 8192; i++)
+		i_pageText = (uint32_t*)&(pageText[cnk * chunk_size_byte]);
+		for (int i = 0; i < 1024; i++)
 			datarow[i] = 0;
 
-		for (int i = 0; i < (int)(chunk_size_byte/4); i++)
+		for (int i = 0; i < (int)(chunk_size_byte / 4); i++)
 			datarow[i] = i_pageText[i];
-	
-		if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
-			for (int i = 0; i < 512; i++) {
-				FERS_WriteRegister(handle, FUP_BA + i, datarow[i]);
-			}
 
+		for (int i = 0; i < 512; i ++) {
+			//FERS_WriteRegister(handle, FUP_BA + i, datarow[i]);
+			addrow[i] = FUP_BA + i;
+		}
+		FERS_MultiWriteRegister(handle, addrow, datarow, 512);
+		//Sleep(3);
+
+		crc_T = crc32c(0, (unsigned char*)i_pageText, 512 * 4);
+		crc_R = 0;
+		int cnt = 0, cnt1 = 0;
+		do {
+			// chiedo il calcolo del crc
 			FERS_WriteRegister(handle, FUP_BA + FUP_CONTROL_REG, 0x1F);
-			crc_T = crc32c(0, (unsigned char*)i_pageText, 512 * 4);
+			cnt1=0;
 			do {
-				FERS_ReadRegister(handle, FUP_BA + FUP_CONTROL_REG, &temp);
-			} while (temp == 0x1F);
-
+				FERS_ReadRegister(handle, FUP_BA + FUP_CONTROL_REG, &temp); // AMA timeout
+				++cnt1;
+			} while ((temp == 0x1F) && (cnt1 < 40));
+			if (cnt1 == 40) {
+				if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD%02d] Failed firmware upgrade via TDL: cannot read CRC Rx\n");
+				char err[1024];
+				sprintf(err, "ERROR: failed firmware upgrade via TDL: cannot read CRC Rx\n");
+				(*ptr)(err, 0);
+				return FERSLIB_ERR_UPGRADE_ERROR;
+			}
+			// rileggo il crc
 			FERS_ReadRegister(handle, FUP_BA + FUP_RESULT_REG, &crc_R);
+			cnt++;
 			if (crc_R != crc_T) {
-				printf("CRC TX error: %08X %08X\n", crc_R, crc_T);
+ 				printf("*** CRC TX error: %08X %08X\n", crc_R, crc_T); 
 			}
-
-
-			FERS_WriteRegister(handle, FUP_BA + FUP_PARAM_REG, cnk * chunk_size_byte);
-			FERS_WriteRegister(handle, FUP_BA + FUP_CONTROL_REG, 0xA);
-		} else {
-			uint32_t cmd = 0xA;
-			datarow[8190] = cnk * chunk_size_byte;
-			datarow[8191] = cmd;
-			const int ChunkSize = 64;
-			for (int i = 0; i < 8192; i += ChunkSize) {
-				if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH)
-					LLeth_WriteMem(FERS_INDEX(handle), i, (char*)(&datarow[i]), ChunkSize * 4);
-				else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB)
-					LLusb_WriteMem(FERS_INDEX(handle), i, (char*)(&datarow[i]), ChunkSize * 4);
-			}
+		// AMA va aggiunto un timeout
+		} while ((crc_R != crc_T) && (cnt < 20)); // ripeto la lettura del CRC (10 volte) finché non è uguale a quello calcolato per essere sicura che il pacchetto è tutto nella memoria del uBlaze
+		if (cnt == 20) {
+			if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD%02d] Failed firmware upgrade via TDL: CRC TX (%08X) and RX (%08X) does not match\n", crc_T, crc_R);
+			char err[1024];
+			sprintf(err, "ERROR: failed firmware upgrade via TDL: CRC TX (%08X) and RX (%08X) does not match\n", crc_T, crc_R);
+			(*ptr)(err, 0);			
+			return FERSLIB_ERR_UPGRADE_ERROR;
 		}
 
-		waitFlashfree(handle);
+		FERS_WriteRegister(handle, FUP_BA + FUP_PARAM_REG, cnk * chunk_size_byte);
+		FERS_WriteRegister(handle, FUP_BA + FUP_CONTROL_REG, 0xA);  // comando la scrittura della pagina nella flash
+			
+		int ret = waitFlashfree(handle);
+		if (ret < 0) {
+			if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD%02d] Failed firmware upgrade: timeout in waitFlashFree function\n");
+			char err[1024];
+			sprintf(err, "ERROR: failed firmware upgrade: timeout in waitFlashFree function\n");
+			(*ptr)(err, 0);
+			return FERSLIB_ERR_UPGRADE_ERROR;
+		}
 
 		if (ptr != NULL) {
-			(*ptr)("", cnk * 100 / n_chunks);
+			if (cnk > next_p * onepercent) {
+				(*ptr)("", cnk * 100 / n_chunks);
+				++next_p;
+			}
 		}
 	}
 	(*ptr)("", 100);
 	return 0;
 }
 
-static int EraseFPGAFirmwareFlash(int handle, uint32_t size_in_byte)
-{
+static int EraseFPGAFirmwareFlash(int handle, uint32_t size_in_byte) {
 	uint32_t reg_add0, reg_add1;
-	if (FERS_CONNECTIONTYPE(handle) != FERS_CONNECTIONTYPE_TDL) {
-		reg_add0 = 8190;
-		reg_add1 = 8191;
-	} else {
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
 		reg_add0 = FUP_BA + FUP_PARAM_REG;
 		reg_add1 = FUP_BA + FUP_CONTROL_REG;
+	} else {
+		reg_add0 = 8190;
+		reg_add1 = 8191;
 	}
 	FERS_WriteRegister(handle, reg_add0, size_in_byte);
 	Sleep(10);
 	FERS_WriteRegister(handle, reg_add1, 0x1);
 	Sleep(10);
-	waitFlashfree(handle);
-	return 0;
-}
-
-static int FirmwareBootApplication(int handle)
-{
-	uint32_t reg_add0;
-	if (FERS_CONNECTIONTYPE(handle) != FERS_CONNECTIONTYPE_TDL) {
-		reg_add0 = 8191;
-	} else {
-		reg_add0 = FUP_BA + FUP_CONTROL_REG;
-	}
-	FERS_WriteRegister(handle, reg_add0, 0xFE);
-	Sleep(10);
+	int ret = waitFlashfree(handle);
+	if (ret < 0)
+		return ret;
 	return 0;
 }
 
 static int RebootFromFWuploader(int handle)
 {
-	FERS_WriteRegister(handle, 0x0100FFF0, 1);
+	FERS_WriteRegister(handle, a_rebootfpga, 1);
 	Sleep(10);
 	return 0;
 }
+
+static int FirmwareBootApplication(int handle) {
+	uint32_t reg_add0;
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
+		//RebootFromFWuploader(handle);
+		reg_add0 = a_rebootfpga;
+		FERS_WriteRegister(handle, reg_add0, 0x2); // set reboot address: application 
+		FERS_SendCommand(handle, 0xFA);            // reboot CMD
+	} else {
+		reg_add0 = 8191; 
+		FERS_WriteRegister(handle, reg_add0, 0xFE);
+	}
+
+	Sleep(10);
+	return 0;
+}
+
 
 
 // --------------------------------------------------------------------------------------------------------- 
@@ -1448,7 +1706,7 @@ int FERS_CheckBootloaderVersion(int handle, int *isInBootloader, uint32_t *versi
 		Sleep(5);
 	}
 	
-	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH)
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH) 
 		res = LLeth_ReadMem(FERS_INDEX(handle), 0, buffer, 16);
 	else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB)
 		res = LLusb_ReadMem(FERS_INDEX(handle), 0, buffer, 16);
@@ -1463,7 +1721,7 @@ int FERS_CheckBootloaderVersion(int handle, int *isInBootloader, uint32_t *versi
 	return 0;
 }
 
-int FUP_CheckControllerVersion(int handle, int* isValid, uint32_t* version, uint32_t* release)
+int FUP_CheckControllerVersion(int handle, int* isValid, uint32_t* version, uint32_t* release, void(*ptr)(char* msg, int progress))
 {
 	*isValid = 0;
 	*version = 0;
@@ -1475,9 +1733,10 @@ int FUP_CheckControllerVersion(int handle, int* isValid, uint32_t* version, uint
 	FERS_ReadRegister(handle, 0xFF000000 + 1, version);
 	FERS_ReadRegister(handle, 0xFF000000 + 2, release);
 
-	printf("key: %x\n", key);
-	printf("version: %x\n", version);
-	printf("timestamp: %x\n", release);
+	char uBlaze_version[500];
+	sprintf(uBlaze_version, "key: %x\n", key);
+	sprintf(uBlaze_version,"%ssversion: %x\n", uBlaze_version, *version);
+	sprintf(uBlaze_version, "%stimestamp: %x\n", uBlaze_version, *release);
 
 	if (key == 0xA1FFAA1B) {
 		printf("unlock key ok\n");
@@ -1582,8 +1841,11 @@ int FERS_FirmwareUpgrade(int handle, FILE *fp, void(*ptr)(char *msg, int progres
 	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
 		FERS_FlushData(handle);
 
+		// enable uBlaze
+		FERS_WriteRegister(handle, a_rebootfpga, 0x0);
+
 		for (int i = 0; i < 20; i++) {
-			FUP_CheckControllerVersion(handle, &isValid, &FUPversion, &FUPrelease);
+			FUP_CheckControllerVersion(handle, &isValid, &FUPversion, &FUPrelease, ptr);
 			if (isValid) break;
 			Sleep(100);
 		}
@@ -1593,6 +1855,7 @@ int FERS_FirmwareUpgrade(int handle, FILE *fp, void(*ptr)(char *msg, int progres
 		}
 		sprintf(msg, "Fiber uploader version %X, build: %8X", FUPversion, FUPrelease);
 		(*ptr)(msg, 0);
+
 	} else {
 		// Reboot from FWloader
 		(*ptr)("Reboot from Firmware loader", 0);
@@ -1616,19 +1879,45 @@ int FERS_FirmwareUpgrade(int handle, FILE *fp, void(*ptr)(char *msg, int progres
 
 	// Erase FPGA
 	(*ptr)("Erasing FPGA...", 0);
-	EraseFPGAFirmwareFlash(handle, firmware_size_byte);
+	int ret = EraseFPGAFirmwareFlash(handle, firmware_size_byte);
+	if (ret < 0) {
+		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD%02d] Failed firmware upgrade: timeout in waitFlashFree function\n");
+		char err[1024];
+		sprintf(err, "ERROR: failed firmware upgrade: timeout in waitFlashFree function\n");
+		(*ptr)(err, 0);
+		return ret;
+	}
 
 	// Write FW
 	(*ptr)("Writing new firmware", 0);
-	WriteFPGAFirmwareOnFlash(handle, firmware, firmware_size_byte, ptr);
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL)
+		ret |= FUP_WriteFPGAFirmwareOnFlash(handle, firmware, firmware_size_byte, ptr);
+	else
+		ret |= WriteFPGAFirmwareOnFlash(handle, firmware, firmware_size_byte, ptr);
+
+	if (ret < 0) {
+		return ret;
+	}
+
 
 	// Reboot from Application
-	FirmwareBootApplication(handle);
+	ret |= FirmwareBootApplication(handle);
+	if (ret < 0) {
+		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD%02d] Failed firmware upgrade: timeout in waitFlashFree function\n");
+		char err[1024];
+		sprintf(err, "ERROR: failed firmware upgrade: timeout in waitFlashFree function\n");
+		(*ptr)(err, 0);
+		return ret;
+	}
 	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB)
 		LLusb_StreamEnable(FERS_INDEX(handle), true);
 	Sleep(100);
 	FERS_FlushData(handle);
+	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL)
+		Sleep(2000);
 
 	return 0;
 }
+
+
 

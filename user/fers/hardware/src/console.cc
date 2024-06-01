@@ -500,8 +500,13 @@ int Con_printf(char *dest, char *fmt, ...)
 	vsprintf(msg, fmt, args);
 	va_end(args);
 
-	if (!ConSocket && (strstr(dest, "C"))) {
-		printf("%s", msg); // Write to console
+	if (!ConSocket && (strstr(dest, "C"))) { // Write to console
+		if (strstr(dest, "w"))	// Warning msg in yellow
+			printf(COLOR_YELLOW "%s" COLOR_RESET, msg);
+		else if (strstr(dest, "e")) // Error message in Red
+			printf(COLOR_RED "%s" COLOR_RESET, msg);
+		else
+			printf("%s", msg);
 	}
 
 	if (ConSocket && (strstr(dest, "S"))) {
@@ -517,7 +522,19 @@ int Con_printf(char *dest, char *fmt, ...)
 	}
 		
 	if ((ConLog != NULL) && (strstr(dest, "L"))) {
-		fprintf(ConLog, "%s", msg); // Write to Log File
+		uint64_t log_time = get_time();
+		char type[50];
+		char mmsg[500];
+		// warning: JW, error: JE, information: JI
+		if (strstr(dest, "w"))	// Warning msg in yellow
+			sprintf(type, "JW");	
+		else if (strstr(dest, "e")) // Error message in Red
+			sprintf(type, "JE");
+		else
+			sprintf(type, "JI");
+
+		sprintf(mmsg, "[%" PRIu64 "][%s]%s", log_time, type, msg);
+		fprintf(ConLog, "%s", mmsg); // Write to Log File
 		fflush(ConLog);
 	}
 	return 0;

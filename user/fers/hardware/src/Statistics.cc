@@ -196,7 +196,7 @@ int Histo1D_SetCount(Histogram1D_t* Histo, int counts)
 int GetNumLine(char* filename) {	// To initialize Histogram
 	FILE* hfile;
 	if (!(hfile = fopen(filename, "r"))) {
-		Con_printf("LCSW", "Warning: the histogram file %s does not exists\n", filename);
+		Con_printf("LCSw", "Warning: the histogram file %s does not exists\n", filename);
 		return -1;
 	}
 	char tmp_str[100];
@@ -364,8 +364,10 @@ int Histo1D_Offline(int num_of_trace, int num_brd, int num_ch, char *infos, int 
 	if (strcmp(plot_name, "Staircase") != 0) {
 		if (Stats.offline_bin <= 0) {
 			Stats.offline_bin = GetNumLine(filename);
-			if (Stats.offline_bin <= 0) // empty or not existing
+			if (Stats.offline_bin <= 0) {// empty or not existing, set the bin content to 0
+				memset(Stats.H1_File[num_of_trace].H_data, 0, sizeof(uint32_t)*Stats.H1_File[num_of_trace].Nbin);
 				return -1;
+			}
 		}
 		char h_name[50];
 		sprintf(h_name, "%s[%d][%d]", plot_name, num_brd, num_ch);
@@ -492,8 +494,8 @@ int CreateStatistics(int nb, int nch, int *AllocatedSize)
 		
 		// Allocate histograms form file 
 		int maxnbin = WDcfg.EHistoNbin;
-		maxnbin = fmax(maxnbin, WDcfg.ToAHistoNbin);
-		maxnbin = fmax(maxnbin, WDcfg.ToTHistoNbin);
+		maxnbin = std::fmax(maxnbin, WDcfg.ToAHistoNbin);
+		maxnbin = std::fmax(maxnbin, WDcfg.ToTHistoNbin);
 		CreateHistogram1D(maxnbin, "", "", "", "Cnt", &Stats.H1_File[i]);
 		*AllocatedSize += maxnbin*sizeof(uint32_t);
 		// Allocate stair case from file (similar to histogram 1D but threated in a different way)
@@ -597,7 +599,7 @@ int ResetStatistics()	// Have H1_File to be reset?
 	}
 	for (int i = 0; i < 8; i++) {
 		ResetStaircase_Offline(&Stats.Staircase_offline[i]);
-		ResetHistogram1D(&Stats.H1_File[i]);	// DNIN:It prevent to initialize the histograms
+		//ResetHistogram1D(&Stats.H1_File[i]);	// DNIN:It prevent to initialize the histograms
 	}
 	return 0;
 }
@@ -637,9 +639,9 @@ int UpdateStatistics(int RateMode)
 	Stats.previous_time = Stats.current_time;
 
 	for(b=0; b<FERSLIB_MAX_NBRD; b++) {
-		double brd_elapstime = (RateMode == 1) ? Stats.current_tstamp_us[b] - Stats.start_time : Stats.current_tstamp_us[b] - Stats.previous_tstamp_us[b];  
+		double brd_elapstime = (RateMode == 1) ? Stats.current_tstamp_us[b]: Stats.current_tstamp_us[b] - Stats.previous_tstamp_us[b];  // - Stats.start_time 
 		double elapstime = (brd_elapstime > 0) ? brd_elapstime : pc_elapstime;
-		double trgcnt_elapstime = (RateMode == 1) ? Stats.trgcnt_update_us[b] - Stats.start_time : Stats.trgcnt_update_us[b] - Stats.previous_trgcnt_update_us[b];  
+		double trgcnt_elapstime = (RateMode == 1) ? Stats.trgcnt_update_us[b] - Stats.start_time*1000: Stats.trgcnt_update_us[b] - Stats.previous_trgcnt_update_us[b];  // - Stats.start_time 
 		Stats.previous_tstamp_us[b] = Stats.current_tstamp_us[b];
 		Stats.previous_trgcnt_update_us[b] = Stats.trgcnt_update_us[b];
 		for(ch=0; ch<FERSLIB_MAX_NCH; ch++) {

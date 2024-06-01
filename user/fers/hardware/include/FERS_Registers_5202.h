@@ -35,6 +35,7 @@
 #define a_t0_out_mask      0x01000014   //  T0 out mask
 #define a_t1_out_mask      0x01000018   //  T1 out mask
 #define a_veto_mask        0x0100001C   //  Veto mask: bit[0]=Cmd from TDL, bit[1]=T0-IN, bit[2]=T1-IN, 
+#define a_acq_ctrl2        0x01000020   //  Acquisition Control Register 2
 #define a_tref_delay       0x01000048   //  Delay of the time reference for the coincidences
 #define a_tref_window      0x0100004C   //  Tref coincidence window (for list mode)
 #define a_dwell_time       0x01000050   //  Dwell time (periodic trigger) in clk cyclces. 0 => OFF
@@ -71,12 +72,14 @@
 #define a_tdc_data         0x01000230   //  R/W   C   32    Regs of TDC
 #define a_tlogic_def       0x01000234   //  Trigger Logic Definition
 #define a_hit_width        0x01000238   //  Monostable for CR triggers
+#define a_tlogic_width     0x0100023C   //  Monostable for Trigger logic output
 #define a_i2c_addr         0x01000240   //  I2C Addr
 #define a_i2c_data         0x01000244   //  I2C Data
 #define a_fw_rev           0x01000300   //  Firmware Revision 
 #define a_acq_status       0x01000304   //  Acquisition Status
 #define a_real_time        0x01000308   //  Real Time in ms
 #define a_dead_time        0x01000310   //  Dead Time in ms
+#define a_board_temp       0x01000340   //  Board temperature near PIC / FPGA
 #define a_fpga_temp        0x01000348   //  FPGA die Temperature 
 #define a_t_or_cnt         0x01000350	//  T-OR counter
 #define a_q_or_cnt         0x01000354	//  Q-OR counter
@@ -92,7 +95,7 @@
 #define a_hv_status        0x01000360   //  HV Status
 #define a_uC_status        0x01000600   //  uC status
 #define a_uC_shutdown      0x01000604   //  uC shutdown
-
+#define a_sw_compatib      0x01004000   //  SW compatibility
 
 #define a_commands         0x01008000   //  Send Commands (for Eth and USB)
 #define a_zs_lgthr         0x02000000   //  Threshold for zero suppression (LG)
@@ -103,7 +106,25 @@
 #define a_hg_gain          0x02000014   //  Preamp High Gain Setting
 #define a_hv_adj           0x02000018   //  HV individual adjust (8 bit DAC)
 #define a_hitcnt           0x02000800   //  Hit counters 
-  
+
+
+// *****************************************************************
+// FPGA Register Bit Fields 
+// *****************************************************************
+// Status Register 
+#define STATUS_READY				(1 <<  0)
+#define STATUS_FAIL					(1 <<  1)
+#define STATUS_RUNNING				(1 <<  2)
+#define STATUS_TDL_SYNC				(1 <<  3)
+#define STATUS_FPGA_OVERTEMP		(1 <<  4)
+#define STATUS_TDLINK_LOL			(1 <<  6)
+#define STATUS_TDL_DISABLED			(1 << 10)
+#define STATUS_SPI_BUSY				(1 << 16)
+#define STATUS_I2C_BUSY				(1 << 17)
+#define STATUS_I2C_FAIL				(1 << 18)
+
+
+
 // *****************************************************************
 // Commands
 // *****************************************************************
@@ -199,68 +220,68 @@
 // Virtual Registers of the concentrator
 // *****************************************************************
 // Register virtual address map
-#define VR_IO_STANDARD				0	// IO standard (NIM or TTL). Applies to all I/Os
-#define VR_IO_FA_DIR				1	// Direction of FA
-#define VR_IO_FB_DIR				2
-#define VR_IO_RA_DIR				3
-#define VR_IO_RB_DIR				4
-#define VR_IO_FA_FN					5	// Function of FA when used as output
-#define VR_IO_FB_FN					6
-#define VR_IO_RA_FN					7
-#define VR_IO_RB_FN					8
-#define VR_IO_FOUT_FN				9	// Funtion of the eigth F_OUT
-#define VR_IO_VETO_FN				10	// Veto source
-#define VR_IO_FIN_MASK				11	// F_IN enable mask
-#define VR_IO_FOUT_MASK				12	// F_OUT enable mask
-#define VR_IO_REG_VALUE				13	// Register controlled I/O
-#define VR_IO_TP_PERIOD				14	// Internal Test Pulse period
-#define VR_IO_TP_WIDTH				15	// Internal Test Pulse width
-#define VR_IO_CLK_SOURCE			16	// Clock source
-#define VR_IO_SYNC_OUT_A_FN			17	// Function of SYNC_OUT (RJ45)
-#define VR_IO_SYNC_OUT_B_FN			18
-#define VR_IO_SYNC_OUT_C_FN			19
-#define VR_IO_MASTER_SALVE			20	// Board is master or slave
-#define VR_IO_SYNC_PULSE_WIDTH		21	// Sync pulse width
-#define VR_IO_SYNC_SEND				22	// Send a sync pulse
-#define VR_SYNC_DELAY				23	// node to node delay in the daisy chain (used to fine tune the sync skew)
-
-
-// Register values
-#define VR_IO_SYNCSOURCE_ZERO		0
-#define VR_IO_SYNCSOURCE_SW_PULSE	1
-#define VR_IO_SYNCSOURCE_SW_REG		2
-#define VR_IO_SYNCSOURCE_FA			3
-#define VR_IO_SYNCSOURCE_FB			4
-#define VR_IO_SYNCSOURCE_RA			5
-#define VR_IO_SYNCSOURCE_RB			6
-#define VR_IO_SYNCSOURCE_GPS_PPS	7
-#define VR_IO_SYNCSOURCE_CLK_REF	8
-
-#define VR_IO_BOARD_MODE_MASTER		0
-#define VR_IO_BOARD_MODE_SLAVE		1
-
-#define VR_IO_STANDARD_IO_NIM		0
-#define VR_IO_STANDARD_IO_TLL		1
-
-#define VR_IO_DIRECTION_OUT			0
-#define VR_IO_DIRECTION_IN_R50		1
-#define VR_IO_DIRECTION_IN_HIZ		2
-
-#define VR_IO_FUNCTION_REGISTER		0
-#define VR_IO_FUNCTION_LOGIC_OR		1
-#define VR_IO_FUNCTION_LOGIC_AND	2
-#define VR_IO_FUNCTION_MAJORITY		3
-#define VR_IO_FUNCTION_TEST_PULSE	4
-#define VR_IO_FUNCTION_SYNC			5
-#define VR_IO_FUNCTION_FA_IN		6
-#define VR_IO_FUNCTION_FB_IN		7
-#define VR_IO_FUNCTION_RA_IN		8
-#define VR_IO_FUNCTION_RB_IN		9
-#define VR_IO_FUNCTION_ZERO			15
-
-#define VR_IO_CLKSOURCE_INTERNAL	0
-#define VR_IO_CLKSOURCE_LEMO		1
-#define VR_IO_CLKSOURCE_SYNC		2
-#define VR_IO_CLKSOURCE_RA			3
+//#define VR_IO_STANDARD				0	// IO standard (NIM or TTL). Applies to all I/Os
+//#define VR_IO_FA_DIR				1	// Direction of FA
+//#define VR_IO_FB_DIR				2
+//#define VR_IO_RA_DIR				3
+//#define VR_IO_RB_DIR				4
+//#define VR_IO_FA_FN					5	// Function of FA when used as output
+//#define VR_IO_FB_FN					6
+//#define VR_IO_RA_FN					7
+//#define VR_IO_RB_FN					8
+//#define VR_IO_FOUT_FN				9	// Funtion of the eigth F_OUT
+//#define VR_IO_VETO_FN				10	// Veto source
+//#define VR_IO_FIN_MASK				11	// F_IN enable mask
+//#define VR_IO_FOUT_MASK				12	// F_OUT enable mask
+//#define VR_IO_REG_VALUE				13	// Register controlled I/O
+//#define VR_IO_TP_PERIOD				14	// Internal Test Pulse period
+//#define VR_IO_TP_WIDTH				15	// Internal Test Pulse width
+//#define VR_IO_CLK_SOURCE			16	// Clock source
+//#define VR_IO_SYNC_OUT_A_FN			17	// Function of SYNC_OUT (RJ45)
+//#define VR_IO_SYNC_OUT_B_FN			18
+//#define VR_IO_SYNC_OUT_C_FN			19
+//#define VR_IO_MASTER_SALVE			20	// Board is master or slave
+//#define VR_IO_SYNC_PULSE_WIDTH		21	// Sync pulse width
+//#define VR_IO_SYNC_SEND				22	// Send a sync pulse
+//#define VR_SYNC_DELAY				23	// node to node delay in the daisy chain (used to fine tune the sync skew)
+//
+//
+//// Register values
+//#define VR_IO_SYNCSOURCE_ZERO		0
+//#define VR_IO_SYNCSOURCE_SW_PULSE	1
+//#define VR_IO_SYNCSOURCE_SW_REG		2
+//#define VR_IO_SYNCSOURCE_FA			3
+//#define VR_IO_SYNCSOURCE_FB			4
+//#define VR_IO_SYNCSOURCE_RA			5
+//#define VR_IO_SYNCSOURCE_RB			6
+//#define VR_IO_SYNCSOURCE_GPS_PPS	7
+//#define VR_IO_SYNCSOURCE_CLK_REF	8
+//
+//#define VR_IO_BOARD_MODE_MASTER		0
+//#define VR_IO_BOARD_MODE_SLAVE		1
+//
+//#define VR_IO_STANDARD_IO_NIM		0
+//#define VR_IO_STANDARD_IO_TLL		1
+//
+//#define VR_IO_DIRECTION_OUT			0
+//#define VR_IO_DIRECTION_IN_R50		1
+//#define VR_IO_DIRECTION_IN_HIZ		2
+//
+//#define VR_IO_FUNCTION_REGISTER		0
+//#define VR_IO_FUNCTION_LOGIC_OR		1
+//#define VR_IO_FUNCTION_LOGIC_AND	2
+//#define VR_IO_FUNCTION_MAJORITY		3
+//#define VR_IO_FUNCTION_TEST_PULSE	4
+//#define VR_IO_FUNCTION_SYNC			5
+//#define VR_IO_FUNCTION_FA_IN		6
+//#define VR_IO_FUNCTION_FB_IN		7
+//#define VR_IO_FUNCTION_RA_IN		8
+//#define VR_IO_FUNCTION_RB_IN		9
+//#define VR_IO_FUNCTION_ZERO			15
+//
+//#define VR_IO_CLKSOURCE_INTERNAL	0
+//#define VR_IO_CLKSOURCE_LEMO		1
+//#define VR_IO_CLKSOURCE_SYNC		2
+//#define VR_IO_CLKSOURCE_RA			3
 
 #endif

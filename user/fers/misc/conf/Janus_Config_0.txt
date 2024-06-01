@@ -4,8 +4,8 @@
 # ------------------------------------------------------------------------------------------
 # Connect
 # ------------------------------------------------------------------------------------------
-Open[0] eth:192.168.0.3
-Open[1] eth:192.168.0.2
+Open[0] eth:192.168.50.3
+#Open[1] eth:192.168.0.2
 
 
 # ******************************************************************************************
@@ -37,7 +37,7 @@ JobLastRun                         5                    # Last Run of the Job
 RunSleep                           0 s                  # Wait Time between runs of a job
 EnableJobs                         0                    # Enable Jobs
 RunNumber_AutoIncr                 0                    # Run Number auto increment
-DataFilePath                       corso/int5           # Destination folder to save the output files
+DataFilePath                       .                    # Destination folder to save the output files
 OF_OutFileUnit                     ns                   # ToA and ToT unit. Options: LSB, ns
 OF_ListBin                         0                    # Event List file (binary)
 OF_ListAscii                       0                    # Event List file (ASCII)

@@ -26,8 +26,8 @@
 
 #define LLBUFF_SIZE			(16*1024)
 #define LLBUFF_CNC_SIZE		(64*1024)
-#define EVBUFF_SIZE			(16*1024)
-#define MAX_EVENT_SIZE		(16*1024)
+#define EVBUFF_SIZE			(64*1024)			// in bytes
+#define MAX_EVENT_SIZE		(64*1024)			// in bytes
 #define MAX_NROW_EDTAB		(64*1024)			// Max number of rows in the event descriptor table
 
 #define FERSLIB_QUEUE_SIZE			(64*1024)	// queue size in words
@@ -51,7 +51,8 @@ static int RO_NumBoards = 0;								// Total num of boards connected for the rea
 static int Cnc_NumBoards[FERSLIB_MAX_NCNC] = { 0 };			// Num of boards connected to one concentrator
 static int tdl_handle[FERSLIB_MAX_NCNC][8][16] = { -1 };	// TDL handle map (gives the handle of the board connected to a specific cnc/chain/node)
 static int Cnc_Flushed[FERSLIB_MAX_NCNC] = { 0 };			// Flag indicating that the concentrator has been flushed
-static uint32_t* DescrTable[FERSLIB_MAX_NCNC] = { NULL };	// Event Descriptor Table
+static uint32_t *DescrTable[FERSLIB_MAX_NCNC] = { NULL };	// Event Descriptor Table
+static int InitReadout[FERSLIB_MAX_NBRD] = { 0 };			// Readout initialized (buffer allocated)
  
 #ifdef FERS_5202
 static SpectEvent_t SpectEvent[FERSLIB_MAX_NBRD];			// Decoded event (spectroscopy mode)
@@ -148,15 +149,15 @@ Data Format from PIC:
 8   0xC0000000_SZSZSZSZ   SZ: data size in 56 bit words -> can be used to check data integrity
 */
 
-uint32_t get_d32(char* LLBuff, int rp, int wp) {
+uint32_t get_d32(char *LLBuff, int rp, int wp) {
 	if (rp == (LLBUFF_SIZE - 1))
-		return (*((uint32_t*)(LLBuff + rp)) & 0xFF) | ((*((uint32_t*)LLBuff) & 0xFFFFFF) << 8);
+		return (*((uint32_t *)(LLBuff + rp)) & 0xFF) | ((*((uint32_t *)LLBuff) & 0xFFFFFF) << 8);
 	else if (rp == (LLBUFF_SIZE - 2))
-		return (*((uint32_t*)(LLBuff + rp)) & 0xFFFF) | ((*((uint32_t*)LLBuff) & 0xFFFF) << 16);
+		return (*((uint32_t *)(LLBuff + rp)) & 0xFFFF) | ((*((uint32_t *)LLBuff) & 0xFFFF) << 16);
 	else if (rp == (LLBUFF_SIZE - 3))
-		return (*((uint32_t*)(LLBuff + rp)) & 0xFFFFFF) | ((*((uint32_t*)LLBuff) & 0xFF) << 24);
+		return (*((uint32_t *)(LLBuff + rp)) & 0xFFFFFF) | ((*((uint32_t *)LLBuff) & 0xFF) << 24);
 	else
-		return *((uint32_t*)(LLBuff + rp));
+		return *((uint32_t *)(LLBuff + rp));
 }
 
 static int eth_usb_ReadRawEvent(int handle, int *nb)
@@ -173,7 +174,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 	uint64_t footer;
 	static FILE* rdlog = NULL;  // readout log file
 	int h = FERS_INDEX(handle);
-	char* EvBuff8 = (char*)EvBuff[h];
+	char *EvBuff8 = (char *)EvBuff[h];
 
 	if ((DebugLogs & DBLOG_RAW_DECODE) && (rdlog == NULL)) {
 		char fname[100];
@@ -187,8 +188,15 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 		rp[h] = 0;
 		size[h] = 0;
 		NeedMoreData[h] = 0;
-		if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH) LLeth_ReadData(h, LLBuff[h], LLBUFF_SIZE, nb);
-		else LLusb_ReadData(h, LLBuff[h], LLBUFF_SIZE, nb);
+		if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH) {
+			if (ProcessRawData)	LLeth_ReadData_File(h, LLBuff[h], LLBUFF_SIZE, nb, 1);
+			else LLeth_ReadData(h, LLBuff[h], LLBUFF_SIZE, nb);
+		} else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_USB) {
+			if (ProcessRawData) LLusb_ReadData_File(h, LLBuff[h], LLBUFF_SIZE, nb, 1);
+			else LLusb_ReadData(h, LLBuff[h], LLBUFF_SIZE, nb);
+		} else if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
+			if (ProcessRawData) LLtdl_ReadData_File(h, LLBuff[h], LLBUFF_SIZE, nb, 1);
+		}
 		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[INFO][BRD %02d] Flushing Data\n", h);
 		return 0;
 	}
@@ -201,13 +209,30 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 			else if (wp[h] < rp[h]) reqsize = rp[h] - wp[h] - 1;
 			else if (rp[h] == 0) reqsize = LLBUFF_SIZE - wp[h] - 1;
 			else reqsize = LLBUFF_SIZE - wp[h];
-			if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH)
-				ret = LLeth_ReadData(h, LLBuff[h] + wp[h], reqsize, &nbb);
-			else
-				ret = LLusb_ReadData(h, LLBuff[h] + wp[h], reqsize, &nbb);
-			if (ret < 0)
+			if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_ETH) {
+				if (ProcessRawData) {
+					if (FERS_ReadoutStatus == ROSTATUS_FLUSHING) return 2;
+					ret = LLeth_ReadData_File(h, LLBuff[h] + wp[h], reqsize, &nbb, 0);
+				} else {
+					ret = LLeth_ReadData(h, LLBuff[h] + wp[h], reqsize, &nbb);
+				}
+			} else {
+				if (ProcessRawData) {
+					if (FERS_ReadoutStatus == ROSTATUS_FLUSHING) return 2;
+					ret = LLusb_ReadData_File(h, LLBuff[h] + wp[h], reqsize, &nbb, 0);
+				} else {
+					ret = LLusb_ReadData(h, LLBuff[h] + wp[h], reqsize, &nbb);
+				}
+			}
+			if (ret < 0) {
+				FERS_LibMsg("[ERROR][BRD %02d] Error in reading data from the board\n", h);
 				return FERSLIB_ERR_READOUT_ERROR;
+			}
 			if (ret == 2) return 2;
+			if (ret == 4) {
+				htag_found = 0;
+				return 4; // End of RawData read
+			}
 			if (nbb > 0) {
 				MOVE_PNT(wp[h], nbb);
 				NeedMoreData[h] = 0;
@@ -215,7 +240,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 					fprintf(rdlog, "ReadData: req=%d, rx=%d (bytes). rp=%d, wp=%d\n", reqsize, nbb, rp[h], wp[h]);
 					fflush(rdlog);
 				}
-			} else if (NeedMoreData[h])
+			} else if (NeedMoreData[h]) 
 				continue;
 		}
 		if (wp[h] == rp[h]) return 0;  // No data
@@ -232,7 +257,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 				d32 = get_d32(LLBuff[h], rp[h], wp[h]);
 				if (d32 == 0x00000081) {  // conversion to big endian
 					htag_found = 1;
-					break;
+					break;  
 				}
 				if (d32 == 0x82000000) {
 					MOVE_PNT(rp[h], 4);
@@ -243,7 +268,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 				if (rdlog != NULL) fprintf(rdlog, "Skip byte %d: %02X\n", skip, (uint8_t)(*(LLBuff[h] + rp[h])));
 				INCR_PNT(rp[h]);
 				skip++;
-			}
+			} 
 			if (skip > 0) {
 				if (rdlog != NULL) fprintf(rdlog, "Skip %d bytes. rp=%d, wp=%d\n", skip, rp[h], wp[h]);
 			}
@@ -261,6 +286,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 				size[h] = d32 & 0x00FFFFFF; // payload size (in words)
 				if (size[h] > (EVBUFF_SIZE / 4)) {
 					if (rdlog != NULL) fprintf(rdlog, "Event Size bigger than memory buffer! (%d)\n", size[h]);
+					FERS_LibMsg("[ERROR][BRD %02d] Event Size bigger than memory buffer! (%d)\n", h, size[h]);
 					return FERSLIB_ERR_READOUT_ERROR;
 				}
 				dtq = (d32 >> 24) & 0xFF;
@@ -308,6 +334,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 				MOVE_PNT(rp[h], 4);
 				if (wpnt[h] >= EVBUFF_SIZE) {
 					if (rdlog != NULL) fprintf(rdlog, "EvBuffer overflow!\n");
+					FERS_LibMsg("[ERROR][BRD %02d] Event buffer overflow\n", h);
 					return FERSLIB_ERR_READOUT_ERROR;
 				}
 				if (bcnt[h] < size[h]) {  // Payload
@@ -337,6 +364,7 @@ static int eth_usb_ReadRawEvent(int handle, int *nb)
 					rvb = 3 - (bcnt[h] & 0x3) * 2;
 					if ((wpnt[h] + rvb) > EVBUFF_SIZE) {
 						if (rdlog != NULL) fprintf(rdlog, "EvBuffer overflow!\n");
+						FERS_LibMsg("[ERROR][BRD %02d] EvBuffer overflow\n", h);
 						return FERSLIB_ERR_READOUT_ERROR;
 					}
 					EvBuff8[wpnt[h] + rvb] = LLBuff[h][rp[h]];  // convert big/little endian
@@ -472,8 +500,12 @@ static int tdl_ReadRawEvent(int cindex, int* bindex, int* nb)
 	if (table_pnt == table_nrow) {  // all event descriptors consumed
 		bpnt = 0;
 		while (bpnt < 12) {  // Read header (3 words)
-			ret = LLtdl_ReadData(cindex, (char*)header + bpnt, 12 - bpnt, &nbr);
+			if (ProcessRawData) 
+				ret = LLtdl_ReadData_File(cindex, (char*)header + bpnt, 12 - bpnt, &nbr, 0);
+			else
+				ret = LLtdl_ReadData(cindex, (char*)header + bpnt, 12 - bpnt, &nbr);
 			if (ret == 2) return 2;
+			if (ret == 4) return 4;	// Finished reading raw data form file
 			if ((nbr == 0) && (bpnt == 0))
 				return 0;  // No data
 			bpnt += nbr;
@@ -495,8 +527,12 @@ static int tdl_ReadRawEvent(int cindex, int* bindex, int* nb)
 		// Read descriptor table
 		bpnt = 0;
 		while (bpnt < (table_nrow * 32)) {
-			ret = LLtdl_ReadData(cindex, (char*)DescrTable[cindex] + bpnt, table_nrow * 32 - bpnt, &nbr);
+			if (ProcessRawData)
+				ret = LLtdl_ReadData_File(cindex, (char*)DescrTable[cindex] + bpnt, table_nrow * 32 - bpnt, &nbr, 0);
+			else
+				ret = LLtdl_ReadData(cindex, (char*)DescrTable[cindex] + bpnt, table_nrow * 32 - bpnt, &nbr);
 			if (ret == 2) return 2;
+			if (ret == 4) return 4;	// Finished reading raw data form file
 			bpnt += nbr;
 		}
 		table_pnt = 0;
@@ -505,14 +541,14 @@ static int tdl_ReadRawEvent(int cindex, int* bindex, int* nb)
 
 	tpnt = table_pnt * 8;
 	pnt = ((DescrTable[cindex][tpnt] >> 24) & 0xFF) | ((DescrTable[cindex][tpnt + 1] & 0xFFFFFF) << 8);  // pointer to event in data packet
-	evsize = DescrTable[cindex][tpnt] & 0xFFFFFF;		// event size
+	evsize = DescrTable[cindex][tpnt] & 0xFFFFFF;		// event size (in 32 bit words)
 	node = DescrTable[cindex][tpnt + 7] & 0xFF;			// board id in chain
 	dqf = (DescrTable[cindex][tpnt + 7] >> 8) & 0xFF;	// data qualifier
 	*bindex = FERS_INDEX(tdl_handle[cindex][chain][node]);
 	trgid = (((uint64_t)DescrTable[cindex][tpnt + 3] >> 16) & 0xFFFF) | ((uint64_t)DescrTable[cindex][tpnt + 4] << 16) | ((uint64_t)(DescrTable[cindex][tpnt + 5] & 0xFF) << 48);
 	Tstamp[*bindex] = (((uint64_t)DescrTable[cindex][tpnt + 1] >> 24) & 0xFF) | ((uint64_t)DescrTable[cindex][tpnt + 2] << 8) | ((uint64_t)(DescrTable[cindex][tpnt + 3] & 0xFFFF) << 40);
 	table_pnt++;
-	if (evsize > MAX_EVENT_SIZE) {
+	if ((evsize+5) > MAX_EVENT_SIZE) {
 		if (ENABLE_FERSLIB_LOGMSG)
 			FERS_LibMsg("[ERROR][CNC %02d] Event size too big (%d)\n", cindex, evsize);
 		return FERSLIB_ERR_READOUT_ERROR;
@@ -523,8 +559,12 @@ static int tdl_ReadRawEvent(int cindex, int* bindex, int* nb)
 		ngap = (pnt - last_pnt) * 4;
 		bpnt = 0;
 		while (bpnt < ngap) {
-			ret = LLtdl_ReadData(cindex, (char*)EvBuff[*bindex], ngap, &nbr);
+			if (ProcessRawData)
+				ret = LLtdl_ReadData_File(cindex, (char*)EvBuff[*bindex], ngap, &nbr, 0);
+			else 
+				ret = LLtdl_ReadData(cindex, (char*)EvBuff[*bindex], ngap, &nbr);
 			if (ret == 2) return 2;
+			if (ret == 4) return 4;	// Finished reading raw data form file
 			bpnt += nbr;
 		}
 	}
@@ -537,9 +577,25 @@ static int tdl_ReadRawEvent(int cindex, int* bindex, int* nb)
 	EvBuff[*bindex][3] = (uint32_t)(Tstamp[*bindex] & 0xFFFFFFFF);
 	EvBuff[*bindex][4] = (uint32_t)((Tstamp[*bindex] >> 32) & 0xFFFFFFFF);
 	bpnt = 0;
+	int timeout = 0;
 	while (bpnt < (int)(evsize * 4)) {
-		ret = LLtdl_ReadData(cindex, (char*)(EvBuff[*bindex] + 5) + bpnt, (evsize * 4) - bpnt, &nbr);
+		if (ProcessRawData)
+			ret = LLtdl_ReadData_File(cindex, (char*)(EvBuff[*bindex] + 5) + bpnt, (evsize * 4) - bpnt, &nbr, 0);
+		else 
+			ret = LLtdl_ReadData(cindex, (char*)(EvBuff[*bindex] + 5) + bpnt, (evsize * 4) - bpnt, &nbr);
 		if (ret == 2) return 2;
+		if (ret == 4) return 4;	// Finished reading raw data form file
+		if (nbr == 0) {
+			timeout++;
+			Sleep(1);
+			if (timeout == 500) {
+				if (ENABLE_FERSLIB_LOGMSG)
+					FERS_LibMsg("[ERROR][CNC %02d] Uncomplete event. Missing data to reach the size of %d bytes\n", cindex, evsize * 4);
+				return FERSLIB_ERR_READOUT_ERROR;
+			}
+		} else {
+			timeout = 0;
+		}
 		bpnt += nbr;
 	}
 	last_pnt += evsize;
@@ -561,8 +617,8 @@ static int tdl_ReadRawEvent(int cindex, int* bindex, int* nb)
 }
 	*nb = 0;
 #endif
-		return 0;
-	}
+	return 0;
+}
 
 
 // *********************************************************************************************************
@@ -608,33 +664,56 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 		ServEvent[h].update_time = get_time();
 		ServEvent[h].tstamp_us  = *tstamp_us;
 		ServEvent[h].pkt_size   = size - 5; 
-		ServEvent[h].format     = (EvBuff[5] >> 12) & 0xF; 
-		ServEvent[h].tempFPGA   = (float)((((EvBuff[5] & 0xFFF) * 503.975) / 4096) - 273.15);  
+		ServEvent[h].version = (EvBuff[5] >> 24) & 0xFF;
 		for (i = 0; i < FERSLIB_MAX_NCH; i++)	// Reset counters
 			ServEvent[h].ch_trg_cnt[i] = 0;
 		ServEvent[h].t_or_cnt = 0;
 		ServEvent[h].q_or_cnt = 0;
-		if (ServEvent[h].format & 1) {  // HV data
-			ServEvent[h].hv_Vmon        = (float)EvBuff[6] / 10000;
-			ServEvent[h].hv_Imon        = (float)EvBuff[7] / 10000;
-			ServEvent[h].tempDetector   = (float)(EvBuff[8] & 0x1FFF) * 256 / 10000;
-			ServEvent[h].tempHV         = (float)((EvBuff[8] >> 13) & 0x1FFF) * 256 / 10000;
-			ServEvent[h].hv_status_on   = (EvBuff[8] >> 26) & 1;
-			ServEvent[h].hv_status_ramp = (EvBuff[8] >> 27) & 1;
-			ServEvent[h].hv_status_ovc  = (EvBuff[8] >> 28) & 1;
-			ServEvent[h].hv_status_ovv  = (EvBuff[8] >> 29) & 1;
-			cntstart = 9;
-		}
-		if (ServEvent[h].format & 2) {  // TrgCnt data
-			for (i=cntstart; i<size; i++) {
-				int ch = (EvBuff[i] >> 24) & 0x7F;
-				if (ch == 64)
-					ServEvent[h].t_or_cnt = EvBuff[i] & 0xFFFFFF;
-				else if (ch == 65)
-					ServEvent[h].q_or_cnt = EvBuff[i] & 0xFFFFFF;
-				else if (ch < FERSLIB_MAX_NCH)
-					ServEvent[h].ch_trg_cnt[ch] = EvBuff[i] & 0xFFFFFF;
+		if (ServEvent[h].version <= 1) {
+			ServEvent[h].format = (EvBuff[5] >> 12) & 0xF;
+			ServEvent[h].tempFPGA = (float)((((EvBuff[5] & 0xFFF) * 503.975) / 4096) - 273.15);
+			if (ServEvent[h].format & 1) {  // HV data
+				ServEvent[h].hv_Vmon = (float)EvBuff[6] / 10000;
+				ServEvent[h].hv_Imon = (float)EvBuff[7] / 10000;
+				ServEvent[h].tempDetector = (float)(EvBuff[8] & 0x1FFF) * 256 / 10000;
+				ServEvent[h].tempHV = (float)((EvBuff[8] >> 13) & 0x1FFF) * 256 / 10000;
+				ServEvent[h].hv_status_on = (EvBuff[8] >> 26) & 1;
+				ServEvent[h].hv_status_ramp = (EvBuff[8] >> 27) & 1;
+				ServEvent[h].hv_status_ovc = (EvBuff[8] >> 28) & 1;
+				ServEvent[h].hv_status_ovv = (EvBuff[8] >> 29) & 1;
+				cntstart = 9;
+				if (ServEvent[h].version > 0) {
+					ServEvent[h].Status = EvBuff[9] & 0xFFFF;
+					ServEvent[h].tempBoard = ((EvBuff[9] >> 16) & 0x3FF) == 0x3FF ? -1 : (float)((EvBuff[9] >> 16) & 0x3FF) / 4;
+					cntstart += 1;
+				}
 			}
+			if (ServEvent[h].format & 2) {  // TrgCnt data
+				for (i = cntstart; i < size; i++) {
+					int ch = (EvBuff[i] >> 24) & 0x7F;
+					if (ch == 64)
+						ServEvent[h].t_or_cnt = EvBuff[i] & 0xFFFFFF;
+					else if (ch == 65)
+						ServEvent[h].q_or_cnt = EvBuff[i] & 0xFFFFFF;
+					else if (ch < FERSLIB_MAX_NCH)
+						ServEvent[h].ch_trg_cnt[ch] = EvBuff[i] & 0xFFFFFF;
+				}
+			}
+		} else {
+			ServEvent[h].format = (EvBuff[5] >> 12) & 0xF;
+			ServEvent[h].tempFPGA = 0;
+			ServEvent[h].t_or_cnt = 0;
+			ServEvent[h].q_or_cnt = 0;
+			ServEvent[h].hv_Vmon = 0;
+			ServEvent[h].hv_Imon = 0;
+			ServEvent[h].tempDetector = 0;
+			ServEvent[h].tempHV = 0;
+			ServEvent[h].hv_status_on = 0;
+			ServEvent[h].hv_status_ramp = 0;
+			ServEvent[h].hv_status_ovc = 0;
+			ServEvent[h].hv_status_ovv = 0;
+			ServEvent[h].tempBoard = 0;
+			ServEvent[h].Status = 0;
 		}
 		*Event = (void*)&ServEvent[h];
 	} else if (((*DataQualifier & 0xF) == DTQ_SPECT) || ((*DataQualifier & 0xF) == DTQ_TSPECT)) {
@@ -642,13 +721,18 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 		*tstamp_us = (double)(((uint64_t)EvBuff[4] << 32) | (uint64_t)EvBuff[3]) * CLK_PERIOD / 1000.0;
 		SpectEvent[h].tstamp_us = *tstamp_us;
 		SpectEvent[h].trigger_id = ((uint64_t)EvBuff[2] << 32) | (uint64_t)EvBuff[1];
-		SpectEvent[h].chmask = ((uint64_t)EvBuff[5] << 32) | (uint64_t)EvBuff[6];
+		pnt = 5;
+		SpectEvent[h].rel_tstamp_us = 0;
+		if (*DataQualifier & 0x80)
+			SpectEvent[h].rel_tstamp_us = EvBuff[pnt++] * CLK_PERIOD / 1000.0;
+		SpectEvent[h].chmask = ((uint64_t)EvBuff[pnt] << 32) | (uint64_t)EvBuff[pnt+1];
+		pnt += 2;
 		both_g = (*DataQualifier >> 4) & 0x01;  // both gain (LG and HG) are present
-		pnt = 7;
 		SpectEvent[h].qdmask = 0;
 		for (ch=0; ch<64; ch++) {
-			uint16_t pedhg = EnablePedCal ? CommonPedestal - PedestalHG[FERS_INDEX(handle)][ch] : 0;
-			uint16_t pedlg = EnablePedCal ? CommonPedestal - PedestalLG[FERS_INDEX(handle)][ch] : 0;
+			int16_t pedhg = EnablePedCal ? CommonPedestal - PedestalHG[FERS_INDEX(handle)][ch] : 0;
+			int16_t pedlg = EnablePedCal ? CommonPedestal - PedestalLG[FERS_INDEX(handle)][ch] : 0;
+			int16_t henergy, lenergy;
 			SpectEvent[h].energyLG[ch] = 0;
 			SpectEvent[h].energyHG[ch] = 0;
 			SpectEvent[h].tstamp[ch] = 0;
@@ -656,19 +740,20 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 			if ((SpectEvent[h].chmask >> ch) & 0x1) {
 				if (both_g) {
 					if (EvBuff[pnt] & 0x8000) SpectEvent[h].qdmask |= ((uint64_t)1 << ch);
-					SpectEvent[h].energyHG[ch] = (EvBuff[pnt] & 0x3FFF) + pedhg;
-					SpectEvent[h].energyLG[ch] = ((EvBuff[pnt]>>16) & 0x3FFF) + pedlg;
+					henergy = (EvBuff[pnt] & 0x3FFF) + pedhg;
+					lenergy = ((EvBuff[pnt] >> 16) & 0x3FFF) + pedlg;
 					pnt++;
 				} else {
 					en = (hl == 0) ? EvBuff[pnt] & 0xFFFF : (EvBuff[pnt++]>>16) & 0xFFFF;
 					hl ^= 1;
 					if (en & 0x8000) SpectEvent[h].qdmask |= ((uint64_t)1 << ch);
-					if (en & 0x4000) SpectEvent[h].energyLG[ch] = (en & 0x3FFF) + pedlg;
-					else SpectEvent[h].energyHG[ch] = (en & 0x3FFF) + pedhg;
+					if (en & 0x4000) lenergy = (en & 0x3FFF) + pedlg;
+					else henergy = (en & 0x3FFF) + pedhg;
 				}
-				// negative numbers (due to pedestal subtraction) are forced to 0
-				if (SpectEvent[h].energyHG[ch] & 0x8000) SpectEvent[h].energyHG[ch] = 0; 
-				if (SpectEvent[h].energyLG[ch] & 0x8000) SpectEvent[h].energyLG[ch] = 0; 
+				// negative numbers (due to pedestal subtraction) are forced to 0 
+				// number exceeding max_range (due to pedestal subtraction) are forced to  max_range
+				SpectEvent[h].energyLG[ch] = std::fmin<int>(std::fmax<int>(0, lenergy), MaxEnergyRange);
+				SpectEvent[h].energyHG[ch] = std::fmin<int>(std::fmax<int>(0, henergy), MaxEnergyRange);
 			}
 		}
 		if ((*DataQualifier & DTQ_TIMING) && (pnt < size)) {
@@ -681,7 +766,7 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 			}
 		}
 		*Event = (void *)&SpectEvent[h];
-	} else if (*DataQualifier == DTQ_COUNT) {
+	} else if ((*DataQualifier & 0x0F) == DTQ_COUNT) {
 		*tstamp_us = (double)(((uint64_t)EvBuff[4] << 32) | (uint64_t)EvBuff[3]) * CLK_PERIOD / 1000.0;
 		CountingEvent[h].tstamp_us = *tstamp_us;
 		CountingEvent[h].trigger_id = ((uint64_t)EvBuff[2] << 32) | (uint64_t)EvBuff[1];
@@ -690,7 +775,11 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 			CountingEvent[h].counts[i] = 0;
 		CountingEvent[h].t_or_counts = 0;
 		CountingEvent[h].q_or_counts = 0;
-		for (i=5; i<size; i++) {
+		pnt = 5;
+		CountingEvent[h].rel_tstamp_us = 0;
+		if (*DataQualifier & 0x80)
+			CountingEvent[h].rel_tstamp_us = EvBuff[pnt++] * CLK_PERIOD / 1000.0;
+		for (i=pnt; i<size; i++) {
 			ch = (EvBuff[i] >> 24) & 0xFF;
 			if (ch < 64) {
 				CountingEvent[h].counts[ch] = EvBuff[i] & 0xFFFFFF;
@@ -706,9 +795,10 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 	//} else if ((*DataQualifier == DTQ_TIMING_CSTART) || (*DataQualifier == DTQ_TIMING_CSTOP) || (*DataQualifier == DTQ_TIMING_STREAMING)) {
 	} else if ((*DataQualifier & 0x0F) == DTQ_TIMING) {
 		*tstamp_us = (double)(((uint64_t)EvBuff[4] << 32) | (uint64_t)EvBuff[3]) * CLK_PERIOD / 1000.0;
-		ListEvent[h].nhits = size - 6;  // 5 word for header + 1 word for time stamp of Tref CTIN: need to take fine time stamp of Tref
+		ListEvent[h].Tref_tstamp = EvBuff[5] & 0x7FFFFFFF;
+		ListEvent[h].nhits = size - 6;
 		for (i=0; i<ListEvent[h].nhits; i++) { 
-			ListEvent[h].channel[i] = (EvBuff[i+6] >> 25) & 0xFF;
+			ListEvent[h].channel[i] = (EvBuff[i + 6] >> 25) & 0xFF;
 			if ((*DataQualifier & 0xF0) == 0x20) {
 				ListEvent[h].tstamp[i] = EvBuff[i + 6] & 0x1FFFFFF;
 				ListEvent[h].ToT[i] = 0;
@@ -787,13 +877,14 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 			ServEvent[h].ChAlmFullFlags[0] = ((uint64_t)EvBuff[9] << 32) | EvBuff[8];
 			ServEvent[h].ChAlmFullFlags[1] = 0;
 			ServEvent[h].ReadoutFlags = EvBuff[10] & 0xFF;
-		} else if (ServEvent[h].format == 7) {
+		} else if (ServEvent[h].format >= 7) {
 			ServEvent[h].Status = (EvBuff[6] >> 12) & 0xFFFF;
 			ServEvent[h].ChAlmFullFlags[0] = ((uint64_t)EvBuff[9] << 32) | EvBuff[8];
 			ServEvent[h].ChAlmFullFlags[1] = ((uint64_t)EvBuff[11] << 32) | EvBuff[10];
 			ServEvent[h].ReadoutFlags = EvBuff[12];
 			ServEvent[h].RejTrg_cnt = EvBuff[13];
 			ServEvent[h].TotTrg_cnt = EvBuff[14];
+			ServEvent[h].SupprTrg_cnt = (ServEvent[h].format == 8) ? EvBuff[15] : 0;
 		} else {
 			//return FERSLIB_ERR_READOUT_ERROR;
 			return 0;
@@ -818,8 +909,10 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 		*tstamp_us = (double)(((uint64_t)EvBuff[4] << 32) | (uint64_t)EvBuff[3]) * CLK_PERIOD / 1000.0;
 		ListEvent[h].tstamp_us = *tstamp_us;
 		ListEvent[h].trigger_id = ((uint64_t)EvBuff[2] << 32) | (uint64_t)EvBuff[1];
-		if (size < 5) 
+		if (size < 5) {
+			FERS_LibMsg("[ERROR][BRD %02d] Event size too small\n", h);
 			return FERSLIB_ERR_READOUT_ERROR;
+		}
 		nwpl = size - 5;  // num words payload = size - 5 word for packet header 
 		port_separator = (*DataQualifier >> 6) & 1;
 		ow_trailer = (*DataQualifier >> 7) & 1;
@@ -858,7 +951,7 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 				ListEvent[h].header2[port] = d32;
 			} else if ((dtype >> 2) == 0x3) {		// one word chip trailer
 				if (!is128ch && (i != (nwpl - 1))) {
-					FERS_LibMsg("Unexpected Trailer\n");
+					FERS_LibMsg("[ERROR][BRD %02d] Unexpected Trailer\n",h);
 					return FERSLIB_ERR_READOUT_ERROR;
 				}
 				ListEvent[h].ow_trailer = d32;
@@ -867,6 +960,7 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 				ListEvent[h].trailer[port] = d32;
 				port++;
 		    } else {
+				FERS_LibMsg("[ERROR][BRD %02d] Unknown data type: 0x%08X\n", h, d32);
 				return FERSLIB_ERR_READOUT_ERROR;
 			}
 		}
@@ -874,7 +968,7 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 		ListEvent[h].nhits = nh;
 		*Event = (void *)&ListEvent[h];
 	} else {
-		FERS_LibMsg("Error in Data Qualifier: %d\n", *DataQualifier);
+		FERS_LibMsg("[ERROR][BRD %02d] Error in Data Qualifier: %d\n", h, *DataQualifier);
 		return FERSLIB_ERR_READOUT_ERROR;
 	}
 
@@ -908,6 +1002,8 @@ int FERS_InitReadout(int handle, int ROmode, int *AllocatedSize) {
 	uint32_t ctrl;
 	static uint8_t mutex_inizialized = 0;
 
+	if (InitReadout[FERS_INDEX(handle)])
+		return 0;
  	*AllocatedSize = 0;
 	ReadoutMode = ROmode;
 	if (!mutex_inizialized) {
@@ -923,7 +1019,6 @@ int FERS_InitReadout(int handle, int ROmode, int *AllocatedSize) {
 		}
 		tdl_handle[FERS_CNCINDEX(handle)][FERS_CHAIN(handle)][FERS_NODE(handle)] = handle;
 		Cnc_NumBoards[FERS_CNCINDEX(handle)]++;
-		tdl_handle[FERS_CNCINDEX(handle)][FERS_CHAIN(handle)][FERS_NODE(handle)] = handle;
 		DescrTable[FERS_CNCINDEX(handle)] = (uint32_t*)malloc(MAX_NROW_EDTAB * 32);
 		*AllocatedSize += MAX_NROW_EDTAB * 8;
 	} else {
@@ -956,11 +1051,15 @@ int FERS_InitReadout(int handle, int ROmode, int *AllocatedSize) {
 		q_trgid[FERS_INDEX(handle)] = 0;
 	}
 
-	FERS_ReadRegister(handle, a_acq_ctrl, &ctrl);
-	if (ctrl & (1 << 15)) 
+	if (!FERS_Offline) {
+		FERS_ReadRegister(handle, a_acq_ctrl, &ctrl);
+		if (ctrl & (1 << 15))
+			EnableStartEvent[FERS_INDEX(handle)] = 1;
+	} else
 		EnableStartEvent[FERS_INDEX(handle)] = 1;
 
 	RO_NumBoards++;
+	InitReadout[FERS_INDEX(handle)] = 1;
 	if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[INFO][BRD %02d] Init Readout. Tot Alloc. size = %.2f MB\n", FERS_INDEX(handle), (float)(FERS_TotalAllocatedMem)/(1024*1024));
 	return 0;
 }
@@ -971,6 +1070,7 @@ int FERS_InitReadout(int handle, int ROmode, int *AllocatedSize) {
 // Return:		0=OK, negative number = error code
 // --------------------------------------------------------------------------------------------------------- 
 int FERS_CloseReadout(int handle) {
+	if (!InitReadout[FERS_INDEX(handle)]) return 0;
 	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
 		Cnc_NumBoards[FERS_CNCINDEX(handle)]--;
 		tdl_handle[FERS_CNCINDEX(handle)][FERS_CHAIN(handle)][FERS_NODE(handle)] = -1;
@@ -994,6 +1094,7 @@ int FERS_CloseReadout(int handle) {
 	}
 	if (queue[FERS_INDEX(handle)] != NULL) free(queue[FERS_INDEX(handle)]);
 	RO_NumBoards--;
+	InitReadout[FERS_INDEX(handle)] = 0;
 #ifdef FERS_5202
 	if ((RO_NumBoards == 0) && (WaveEvent[FERS_INDEX(handle)].wave_hg != NULL)) {  // Last board connected => can free waveform buffers
 		free(WaveEvent[FERS_INDEX(handle)].wave_hg);
@@ -1019,57 +1120,67 @@ int FERS_CloseReadout(int handle) {
 // Return:		0=OK, negative number = error code
 // --------------------------------------------------------------------------------------------------------- 
 int FERS_StartAcquisition(int *handle, int NumBrd, int StartMode) {
-	int ret=0, b, tdl = 1, rc;
+	int ret=0, b, tdl = 1, rc, chain;
 	if (FERS_ReadoutStatus == ROSTATUS_RUNNING)
 		FERS_StopAcquisition(handle, NumBrd, StartMode);
 	for(b = 0; b < NumBrd; b++) {
 		if (handle[b] == -1) continue;
+		//if (!FERS_Offline) ret |= FERS_FlushData(handle[b]);
 		ret |= FERS_FlushData(handle[b]);
 		if (FERS_CONNECTIONTYPE(handle[b]) != FERS_CONNECTIONTYPE_TDL) tdl = 0;
 	}
-	// Check that all RX-threads are in idle state (not running)
-	for (int i=0; i<100; i++) {
-		lock(FERS_RoMutex);
-		rc = FERS_RunningCnt;
-		unlock(FERS_RoMutex);
-		if (rc == 0) break;
-		Sleep(10);
-	}
-	if (rc > 0) {
-		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR] %d RX-thread still running while starting a new run\n", rc);
-		return FERSLIB_ERR_START_STOP_ERROR;
-	}
+	if (!FERS_Offline) {
+		// Check that all RX-threads are in idle state (not running)
+		for (int i = 0; i < 100; i++) {
+			lock(FERS_RoMutex);
+			rc = FERS_RunningCnt;
+			unlock(FERS_RoMutex);
+			if (rc == 0) break;
+			Sleep(10);
+		}
+		if (rc > 0) {
+			if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR] %d RX-thread still running while starting a new run\n", rc);
+			return FERSLIB_ERR_START_STOP_ERROR;
+		}
 
-	lock(FERS_RoMutex);
-	FERS_ReadoutStatus = ROSTATUS_RUNNING;
-	unlock(FERS_RoMutex);
-	// Check that all RX-threads are running
-	for (int i=0; i<100; i++) {
 		lock(FERS_RoMutex);
-		rc = FERS_RunningCnt;
+		FERS_ReadoutStatus = ROSTATUS_RUNNING;
 		unlock(FERS_RoMutex);
-		if ((tdl && (rc == 1)) || (rc == NumBrd)) break;  // CTIN: count connected concentrators...
-		Sleep(10);
-	}
-	if ((tdl && (rc == 0)) || (!tdl && (rc < NumBrd))) {
-		if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR] %d RX-thread are not running after the run start\n", rc);
-		return FERSLIB_ERR_START_STOP_ERROR;
-	}
+		// Check that all RX-threads are running
+		for (int i = 0; i < 100; i++) {
+			lock(FERS_RoMutex);
+			rc = FERS_RunningCnt;
+			unlock(FERS_RoMutex);
+			if ((tdl && (rc == 1)) || (rc == NumBrd)) break;  // CTIN: count connected concentrators...
+			Sleep(10);
+		}
+		if ((tdl && (rc == 0)) || (!tdl && (rc < NumBrd))) {
+			if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR] %d RX-thread are not running after the run start\n", rc);
+			return FERSLIB_ERR_START_STOP_ERROR;
+		}
 
-	if (StartMode == STARTRUN_TDL) {
-		ret |= FERS_SendCommandBroadcast(handle, CMD_RES_PTRG, 0);
-		ret |= FERS_SendCommandBroadcast(handle, CMD_TIME_RESET, 0);
-		ret |= FERS_SendCommandBroadcast(handle, CMD_ACQ_START, 0);
-	} else if ((StartMode == STARTARUN_CHAIN_T0) || (StartMode == STARTRUN_CHAIN_T1)) {
-		ret |= FERS_SendCommand(handle[0], CMD_TIME_RESET);
-		ret |= FERS_SendCommand(handle[0], CMD_ACQ_START);
-	} else {
-		for(b = 0; b < NumBrd; b++) {
-			if (handle[b] == -1) continue;
-			ret |= FERS_SendCommand(handle[b], CMD_TIME_RESET);
-			ret |= FERS_SendCommand(handle[b], CMD_ACQ_START);	
+
+		if (StartMode == STARTRUN_TDL) {
+			for (chain = 0; chain < FERSLIB_MAX_NTDL; chain++)	// Stop data trains
+				ret |= LLtdl_ControlChain(0, chain, 0, 0);
+
+			ret |= FERS_SendCommandBroadcast(handle, CMD_RES_PTRG, 0);
+			ret |= FERS_SendCommandBroadcast(handle, CMD_TIME_RESET, 0);
+			ret |= FERS_SendCommandBroadcast(handle, CMD_ACQ_START, 0);
+			for (chain = 0; chain < FERSLIB_MAX_NTDL; chain++)	// Start data trains
+				ret |= LLtdl_ControlChain(0, chain, 1, 0x100);
+
+		} else if ((StartMode == STARTRUN_CHAIN_T0) || (StartMode == STARTRUN_CHAIN_T1)) {
+			ret |= FERS_SendCommand(handle[0], CMD_TIME_RESET);
+			ret |= FERS_SendCommand(handle[0], CMD_ACQ_START);
+		} else {
+			for (b = 0; b < NumBrd; b++) {
+				if (handle[b] == -1) continue;
+				ret |= FERS_SendCommand(handle[b], CMD_TIME_RESET);
+				ret |= FERS_SendCommand(handle[b], CMD_ACQ_START);
+			}
+		}
 	}
-}
 	if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[INFO] Start Run (ret=%d)\n", ret);
 	return ret;
 }
@@ -1087,15 +1198,15 @@ int FERS_StartAcquisition(int *handle, int NumBrd, int StartMode) {
 int FERS_StopAcquisition(int *handle, int NumBrd, int StartMode) {
 	int ret=0, b;
 	if (StartMode == STARTRUN_TDL) {
-		ret |= FERS_SendCommandBroadcast(handle, CMD_ACQ_STOP, 0);
+		if (!FERS_Offline) ret |= FERS_SendCommandBroadcast(handle, CMD_ACQ_STOP, 0);
 		int cindex = FERS_CNCINDEX(*handle);
 		Cnc_Flushed[cindex] = 0;
-	} else if ((StartMode == STARTARUN_CHAIN_T0) || (StartMode == STARTRUN_CHAIN_T1)) {
-		ret |= FERS_SendCommand(handle[0], CMD_ACQ_STOP);
+	} else if ((StartMode == STARTRUN_CHAIN_T0) || (StartMode == STARTRUN_CHAIN_T1)) {
+		if (!FERS_Offline) ret |= FERS_SendCommand(handle[0], CMD_ACQ_STOP);
 	} else {
 		for(b = 0; b < NumBrd; b++) {
 			if (handle[b] == -1) continue;
-			ret |= FERS_SendCommand(handle[b], CMD_ACQ_STOP);	
+			if (!FERS_Offline) ret |= FERS_SendCommand(handle[b], CMD_ACQ_STOP);
 		}
 	}
 	FERS_ReadoutStatus = ROSTATUS_EMPTYING;
@@ -1111,13 +1222,13 @@ int FERS_StopAcquisition(int *handle, int NumBrd, int StartMode) {
 int FERS_FlushData(int handle) {
 	if (FERS_ReadoutStatus == ROSTATUS_RUNNING) return FERSLIB_ERR_OPER_NOT_ALLOWED;
 	FERS_ReadoutStatus = ROSTATUS_FLUSHING;
-	FERS_SendCommand(handle, CMD_CLEAR);
+	if (!FERS_Offline) FERS_SendCommand(handle, CMD_CLEAR);
 	if (FERS_CONNECTIONTYPE(handle) == FERS_CONNECTIONTYPE_TDL) {
 		int cindex = FERS_CNCINDEX(handle);
 		int bindex = FERS_INDEX(handle);
 		int nbf = 0;
 		tdl_ReadRawEvent(cindex, &bindex, &nbf);		
-		if (!Cnc_Flushed[cindex]) {
+		if (!Cnc_Flushed[cindex] && !FERS_Offline) { // Concentrator not flushed in offline connection
 			LLtdl_Flush(cindex);  // Flush concentrator 
 			Sleep(100);
 			Cnc_Flushed[cindex] = 1;
@@ -1181,6 +1292,7 @@ int FERS_GetEvent(int *handle, int *bindex, int *DataQualifier, double *tstamp_u
 					ret = eth_usb_ReadRawEvent(handle[i], &nbb);
 				}
 				if (ret == 2) return 2;
+				if (ret == 4) return 4;
 				if (ret < 0) 
 					return ret;
 				if ((nbb == 0) && !timed_out[qi]) {  // No data from this board; if timeout not reached, continue to wait (the funtion returns 0)
@@ -1265,15 +1377,21 @@ int FERS_GetEvent(int *handle, int *bindex, int *DataQualifier, double *tstamp_u
 			for(i=0; i<NumCnc; i++) {  // CTIN: add time sorting between concentrators. For the moment it is a simple round robin
 				h = FERS_CNCINDEX(handle[i]);
 				ret = tdl_ReadRawEvent(curr_cindex, bindex, nb);
-				if (ret < 0) 
+				if (ret < 0) {
+					if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][CNC %02d] Read Raw data error (ret = %d)\n", curr_cindex, ret);
 					return ret;
+				}
 				if (ret == 2) 
 					return 2;
+				if (ret == 4)
+					return 4;
 				curr_cindex = (curr_cindex == (NumCnc-1)) ? 0 : curr_cindex + 1;
 				if (*nb > 0) {
-					ret = FERS_DecodeEvent(handle[i], EvBuff[*bindex], EvBuff_nb[*bindex], DataQualifier, tstamp_us, Event);
-					if (ret < 0) 
+					ret = FERS_DecodeEvent(handle[*bindex], EvBuff[*bindex], EvBuff_nb[*bindex], DataQualifier, tstamp_us, Event);
+					if (ret < 0) {
+						if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD %02d] Decode error (ret = %d)\n", *bindex, ret);
 						return ret;
+					}
 					EvBuff_nb[*bindex] = 0;
 					break;
 				}
@@ -1283,10 +1401,14 @@ int FERS_GetEvent(int *handle, int *bindex, int *DataQualifier, double *tstamp_u
 				h = FERS_INDEX(handle[i]);
 				if (EvBuff_nb[h] == 0) {
 					ret = eth_usb_ReadRawEvent(handle[i], nb);
-					if (ret < 0) 
+					if (ret < 0) {
+						if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD %02d] Read Raw data error (ret = %d)\n", i, ret);
 						return ret;
+					}
 					if (ret == 2) 
 						return 2;
+					if (ret == 4)
+						return 4;
 				}
 				if ((EvBuff_nb[h] > 0) && ((oldest_ev == 0) || (oldest_ev > Tstamp[h]))) {
 					oldest_ev = Tstamp[h];
@@ -1295,8 +1417,10 @@ int FERS_GetEvent(int *handle, int *bindex, int *DataQualifier, double *tstamp_u
 			}
 			if (h_found >= 0) {
 				ret = FERS_DecodeEvent(handle[h_found], EvBuff[h_found], EvBuff_nb[h_found], DataQualifier, tstamp_us, Event);
-				if (ret < 0) 
+				if (ret < 0) {
+					if (ENABLE_FERSLIB_LOGMSG) FERS_LibMsg("[ERROR][BRD %02d] Decode error (ret = %d)\n", h_found, ret);
 					return ret;
+				}
 				*nb = EvBuff_nb[h_found];
 				*bindex = h_found;
 				EvBuff_nb[h_found] = 0;
