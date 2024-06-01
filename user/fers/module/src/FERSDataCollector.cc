@@ -194,8 +194,8 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
 /////////////////////////////////////////////////////////////////////////////////////////
 
   void FERSDataCollector::BuildEvent_TimeStamp(){
-	    std::cout<< "m_event_ready_ts.size() "<< m_event_ready_ts.size()<<std::endl;
-  std::cout<< "m_que_event_ts.size() "<< m_que_event_ts.size()<<std::endl;
+  //std::cout<< "m_event_ready_ts.size() "<< m_event_ready_ts.size()<<std::endl;
+  //std::cout<< "m_que_event_ts.size() "<< m_que_event_ts.size()<<std::endl;
   while(!m_event_ready_ts.empty() && m_event_ready_ts.size() == m_que_event_ts.size()){
     std::cout<<"ts building main, loop\n";
     uint64_t ts_next_end = -1;

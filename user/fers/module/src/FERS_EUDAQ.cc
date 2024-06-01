@@ -6,7 +6,8 @@
 /////////////////////////////////////////////////////////////////////
 
 #include "eudaq/Producer.hh"
-#include "FERS_Registers.h"
+#include "FERS_Registers_5202.h"
+#include "FERS_Registers_5215.h"
 #include "FERSlib.h"
 #include <iostream>
 #include <chrono>

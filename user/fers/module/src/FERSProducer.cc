@@ -8,7 +8,8 @@
 
 
 #include "eudaq/Producer.hh"
-#include "FERS_Registers.h"
+#include "FERS_Registers_5202.h"
+#include "FERS_Registers_5215.h"
 #include "FERSlib.h"
 #include <iostream>
 #include <fstream>
@@ -26,7 +27,7 @@
 #include "JanusC.h"
 RunVars_t RunVars;
 int SockConsole;	// 0: use stdio console, 1: use socket console
-char ErrorMsg[250];	
+char ErrorMsg[250];
 //int NumBrd=2; // number of boards
 
 Config_t WDcfg;
@@ -124,58 +125,124 @@ void FERSProducer::DoInitialise(){
 #endif
 
 	fers_ip_address = ini->Get("FERS_IP_ADDRESS", "1.0.0.0");
-	fers_id = ini->Get("FERS_ID","");	
+	fers_id = ini->Get("FERS_ID","");
 	//memset(&handle, -1, sizeof(handle));
 	for (int i=0; i<FERSLIB_MAX_NBRD; i++)
 		vhandle[i] = -1;
-	char ip_address[20];
-	char connection_path[40];
+	char ip_address[30];
+	char connection_path[50];
+
 	strcpy(ip_address, fers_ip_address.c_str());
 	sprintf(connection_path,"eth:%s",ip_address);
-	std::cout <<"----3333---- "<<connection_path<<std::endl;
-	int ret = FERS_OpenDevice(connection_path, &handle);
 
-	std::cout <<"-------- ret= "<<ret<<" handle = "<<handle<<std::endl;
-	if(ret == 0){
-		std::cout <<"Connected to: "<< connection_path<<std::endl;
-		vhandle[WDcfg.NumBrd] = handle;
-		brd=shmp->connectedboards;
-		shmp->connectedboards++;
-		shmp->handle[brd] = handle;
+        char cpath[100];
+	FERS_Get_CncPath(connection_path, cpath);
+	std::string str_cpath(cpath);
+        std::string c_ip = str_cpath.substr(0,str_cpath.length() - 4); // removing ":cnc"
+	EUDAQ_INFO("cpath "+std::string(cpath)
+	+" c_ip "+c_ip
+		);
+
+	int ret ;
+        int cnc=0;
+        int cnc_handle[FERSLIB_MAX_NCNC];               // Concentrator handles
+
+	if (!FERS_IsOpen(cpath)) {
+                FERS_CncInfo_t CncInfo;
+                ret = FERS_OpenDevice(cpath, &cnc_handle[cnc]);  // open connection to the concetrator
+                ret |= FERS_ReadConcentratorInfo(cnc_handle[cnc], &CncInfo);
+                for (int i = 0; i < 8; i++) { // Loop over all the TDlink chains
+                	if (CncInfo.ChainInfo[i].BoardCount > 0) {
+   				EUDAQ_INFO("TDlink "+std::to_string(i)
+				+" Connected Boards Count "+std::to_string(CncInfo.ChainInfo[i].BoardCount)
+		 		);
+				//connection_path[strlen(connection_path) - 1] = '\0';
+				int ROmode = ini->Get("FERS_RO_MODE",0);
+				int allocsize;
+				char tmp_path[100];
+                		for (brd = 0; brd < CncInfo.ChainInfo[i].BoardCount; brd++) { // Loop over all the boards
+					//std::sprintf(tmp_path,"%s%d", connection_path,brd);
+					std::sprintf(tmp_path,"%s:tdl:%d:%d", c_ip.c_str(),i,brd);// CNC IP : chain#: Brd#
+				        ret = FERS_OpenDevice(tmp_path, &handle); // open conection to a board
+					if(ret==0){
+		   				EUDAQ_INFO("Bords at "+std::string(tmp_path)
+						+" connected to handle "+std::to_string(handle)
+				 		);
+						FERS_InitReadout(handle,ROmode,&allocsize);
+					// fill shared struct
+
+						vhandle[shmp->connectedboards]=handle;
+						shmp->handle[shmp->connectedboards] = handle;
+
+						std::string fers_prodid = ini->Get("FERS_PRODID","no prod ID");
+						strcpy(shmp->IP[shmp->connectedboards],       tmp_path);
+						strcpy(shmp->desc[shmp->connectedboards],     std::to_string(FERS_pid(handle)).c_str());
+						strcpy(shmp->location[shmp->connectedboards], fers_id.c_str());
+						strcpy(shmp->producer[shmp->connectedboards], fers_prodid.c_str());
+
+
+						EUDAQ_INFO("check shared on board "+std::to_string(shmp->connectedboards)+": "
+							+std::string(shmp->IP[shmp->connectedboards])
+							+"*"+std::string(shmp->desc[shmp->connectedboards])
+							+"*"+std::to_string(shmp->handle[shmp->connectedboards])
+							+"*"+std::string(shmp->location[shmp->connectedboards])
+							+"*"+std::string(shmp->producer[shmp->connectedboards])
+						);
+
+						shmp->connectedboards++;
+					}else{
+		   				EUDAQ_THROW("Bords at "+std::string(tmp_path)
+						+" error "+std::to_string(ret)
+				 		);
+					}
+
+				}
+			}
+		}
+	}
+	//EUDAQ_INFO("ret= "+std::to_string(ret)
+	//		+" WDcfg.NumBrd "+std::to_string(WDcfg.NumBrd)
+	//	  );
+
+	//if(ret == 0){
+		//std::cout <<"Connected to: "<< connection_path<<std::endl;
+		//vhandle[WDcfg.NumBrd] = handle;
+		//brd=shmp->connectedboards;
+		//shmp->connectedboards++;
+		//shmp->handle[brd] = handle;
 		//WDcfg.NumBrd++;
-	} else
-		EUDAQ_THROW("unable to connect to fers with ip address: "+ fers_ip_address);
+	//} else
+		//EUDAQ_THROW("unable to connect to fers with ip address: "+ fers_ip_address);
 
 	// Readout Mode
-	// 0	// Disable sorting 
-	// 1	// Enable event sorting by Trigger Tstamp 
+	// 0	// Disable sorting
+	// 1	// Enable event sorting by Trigger Tstamp
 	// 2	// Enable event sorting by Trigger ID
-	int ROmode = ini->Get("FERS_RO_MODE",0);
-	int allocsize;
-	FERS_InitReadout(handle,ROmode,&allocsize);
+	//int ROmode = ini->Get("FERS_RO_MODE",0);
+	//int allocsize;
+	//FERS_InitReadout(handle,ROmode,&allocsize);
+	//FERS_InitReadout(vhandle,ROmode,&allocsize);
 
 	// fill shared struct
-	std::string fers_prodid = ini->Get("FERS_PRODID","no prod ID");	
-	strcpy(shmp->IP[brd],       fers_ip_address.c_str());
-	strcpy(shmp->desc[brd],     std::to_string(FERS_pid(handle)).c_str());
-	strcpy(shmp->location[brd], fers_id.c_str());
-	strcpy(shmp->producer[brd], fers_prodid.c_str());
+	//std::string fers_prodid = ini->Get("FERS_PRODID","no prod ID";
+	//strcpy(shmp->IP[brd],       fers_ip_address.c_str());
+	//strcpy(shmp->desc[brd],     std::to_string(FERS_pid(handle)).c_str());
+	//strcpy(shmp->location[brd], fers_id.c_str());
+	//strcpy(shmp->producer[brd], fers_prodid.c_str());
 
-	std::cout <<" ------- RINO ----------   "<<fers_ip_address
-		<<" handle "<<handle
-		<<" ROmode "<<ROmode<<"  allocsize "<<allocsize
-		<<"Connected to: "<< connection_path 
-		<< " "<<fers_id<<std::endl;
-	EUDAQ_INFO("Connected to handle "+std::to_string(handle)
-			+" ip "+fers_ip_address+" "+fers_id
-			+" connectedboards "+std::to_string(shmp->connectedboards)
+	//std::cout <<" ------- RINO ----------   "<<fers_ip_address
+	//	<<" handle "<<handle
+	//	<<" ROmode "<<ROmode<<"  allocsize "<<allocsize
+	//	<<" Connected to: "<< connection_path
+	//	<< " "<<fers_id<<std::endl;
+	EUDAQ_WARN("DT5215: # connected boards is "+std::to_string(shmp->connectedboards)
 		  );
-	EUDAQ_WARN("check shared on board "+std::to_string(brd)+": "
-			+std::string(shmp->IP[brd])
-			+"*"+std::string(shmp->desc[brd])
-			+"*"+std::string(shmp->location[brd])
-			+"*"+std::string(shmp->producer[brd])
-		  );
+//	EUDAQ_WARN("check shared on board "+std::to_string(brd)+": "
+//			+std::string(shmp->IP[brd])
+//			+"*"+std::string(shmp->desc[brd])
+//			+"*"+std::string(shmp->location[brd])
+//			+"*"+std::string(shmp->producer[brd])
+//		  );
 
 }
 
@@ -197,19 +264,19 @@ void FERSProducer::DoConfigure(){
 	//std::string conf_filename = fers_conf_dir + fers_conf_file;
 
 	fers_acq_mode = conf->Get("FERS_ACQ_MODE",0);
-	std::cout<<"in FERSProducer::DoConfigure, handle = "<< handle<< std::endl;
+	//std::cout<<"in FERSProducer::DoConfigure, handle = "<< handle<< std::endl;
 
 	int ret = -1; // to store return code from calls to fers
 	//EUDAQ_WARN(fers_conf_dir);
 	//EUDAQ_WARN(fers_conf_filename);
 	FILE* conf_file = fopen(fers_conf_filename.c_str(),"r");
-	if (conf_file == NULL) 
+	if (conf_file == NULL)
 	{
 		EUDAQ_THROW("unable to open config file "+fers_conf_filename);
 	} else {
 		ret = ParseConfigFile(conf_file,&WDcfg, 1);
 		if (ret != 0)
-		{ 
+		{
 			fclose(conf_file);
 			EUDAQ_THROW("Parsing failed");
 		}
@@ -217,36 +284,50 @@ void FERSProducer::DoConfigure(){
 	fclose(conf_file);
 	//EUDAQ_WARN( "AcquisitionMode: "+std::to_string(WDcfg.AcquisitionMode));
 
-	ret = ConfigureFERS(handle, 0); // 0 = hard, 1 = soft (no acq restart)
-	if (ret != 0)
-	{
-		EUDAQ_THROW("ConfigureFERS failed");
-	}
-
 	fers_hv_vbias = conf->Get("FERS_HV_Vbias", 0);
 	fers_hv_imax = conf->Get("FERS_HV_IMax", 0);
 	float fers_dummyvar = 0;
 	int ret_dummy = 0;
-	std::cout << "\n**** FERS_HV_Imax from config: "<< fers_hv_imax <<  std::endl; 
-	ret = HV_Set_Imax( handle, fers_hv_imax);
-	ret = HV_Set_Imax( handle, fers_hv_imax);
-	ret_dummy = HV_Get_Imax( handle, &fers_dummyvar); // read back from fers
-	if (ret == 0) {
-		EUDAQ_INFO("I max set!");
-		std::cout << "**** readback Imax value: "<< fers_dummyvar << std::endl;
-	} else {
-		EUDAQ_THROW("I max NOT set");
-	}
-	std::cout << "\n**** FERS_HV_Vbias from config: "<< fers_hv_vbias << std::endl;
-	ret = HV_Set_Vbias( handle, fers_hv_vbias); // send to fers
-	ret = HV_Set_Vbias( handle, fers_hv_vbias); // send to fers
-	ret_dummy = HV_Get_Vbias( handle, &fers_dummyvar); // read back from fers
-	if (ret == 0) {
-		EUDAQ_INFO("HV bias set!");
-		std::cout << "**** readback HV value: "<< fers_dummyvar << std::endl;
-	} else {
-		EUDAQ_THROW("HV bias NOT set");
-	}
+
+        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+		//ret = ConfigureFERS(handle, 0); // 0 = hard, 1 = soft (no acq restart)
+		ret = ConfigureFERS(shmp->handle[brd], 0); // 0 = hard, 1 = soft (no acq restart)
+		if (ret != 0)
+		{
+			EUDAQ_THROW("ConfigureFERS failed "+std::to_string(shmp->handle[brd]));
+		}
+
+		std::cout << "\n**** FERS_HV_Imax from config: "<< fers_hv_imax <<  std::endl;
+		ret = HV_Set_Imax( shmp->handle[brd], fers_hv_imax);
+		ret = HV_Set_Imax( shmp->handle[brd], fers_hv_imax);
+		ret_dummy = HV_Get_Imax( shmp->handle[brd], &fers_dummyvar); // read back from fers
+		if (ret == 0) {
+			EUDAQ_INFO("I max set!");
+			std::cout << "**** readback Imax value: "<< fers_dummyvar << std::endl;
+		} else {
+			EUDAQ_THROW("I max NOT set");
+		}
+		std::cout << "\n**** FERS_HV_Vbias from config: "<< fers_hv_vbias << std::endl;
+		ret = HV_Set_Vbias( shmp->handle[brd], fers_hv_vbias); // send to fers
+		ret = HV_Set_Vbias( shmp->handle[brd], fers_hv_vbias); // send to fers
+		ret_dummy = HV_Get_Vbias( shmp->handle[brd], &fers_dummyvar); // read back from fers
+		if (ret == 0) {
+			EUDAQ_INFO("HV bias set!");
+			std::cout << "**** readback HV value: "<< fers_dummyvar << std::endl;
+			// put things in shared structure
+			shmp->HVbias[brd] = fers_hv_vbias;
+			std::string temp=conf->Get("EUDAQ_DC","no data collector");
+			strcpy(shmp->collector[brd],temp.c_str());
+			shmp->AcquisitionMode[brd] = WDcfg.AcquisitionMode;
+			EUDAQ_WARN("check shared in board "+std::to_string(brd)
+			+": HVbias = "+std::to_string(shmp->HVbias[brd])+" collector="+std::string(shmp->collector[brd])
+			+" acqmode="+std::to_string(shmp->AcquisitionMode[brd]));
+			sleep(1);
+			HV_Set_OnOff(shmp->handle[brd], 1); // set HV on
+		} else {
+			EUDAQ_THROW("HV bias NOT set");
+		}
+	} // end loop over boards
 
 	stair_do = (bool)(conf->Get("stair_do",0));
 	stair_shapingt = (uint16_t)(conf->Get("stair_shapingt",0));
@@ -256,18 +337,9 @@ void FERSProducer::DoConfigure(){
 	stair_dwell_time  = (uint32_t)(conf->Get("stair_dwell_time",0));
 
 
-	// put things in shared structure
-	shmp->HVbias[brd] = fers_hv_vbias;
-	std::string temp=conf->Get("EUDAQ_DC","no data collector");
-	strcpy(shmp->collector[brd],temp.c_str());
-	shmp->AcquisitionMode[brd] = WDcfg.AcquisitionMode;
-	EUDAQ_WARN("check shared in board "+std::to_string(brd)+": HVbias = "+std::to_string(shmp->HVbias[brd])+" collector="+std::string(shmp->collector[brd])
-	+" acqmode="+std::to_string(shmp->AcquisitionMode[brd]));
 
 
 
-	sleep(1);
-	HV_Set_OnOff(handle, 1); // set HV on
 
 }
 
@@ -275,14 +347,18 @@ void FERSProducer::DoConfigure(){
 void FERSProducer::DoStartRun(){
 	m_exit_of_run = false;
 	// here the hardware is told to startup
-	FERS_SendCommand( handle, CMD_ACQ_START );
+        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+		FERS_SendCommand( shmp->handle[brd], CMD_ACQ_START );
+	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
 }
 
 //----------DOC-MARK-----BEG*STOP-----DOC-MARK----------
 void FERSProducer::DoStopRun(){
 	m_exit_of_run = true;
-	FERS_SendCommand( handle, CMD_ACQ_STOP );
+        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+		FERS_SendCommand( shmp->handle[brd], CMD_ACQ_STOP );
+	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
 }
 
@@ -298,7 +374,9 @@ void FERSProducer::DoReset(){
 	}
 	m_ms_busy = std::chrono::milliseconds();
 	m_exit_of_run = false;
-	HV_Set_OnOff( handle, 0); // set HV off
+        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+		HV_Set_OnOff( shmp->handle[brd], 0); // set HV off
+	}
 }
 
 //----------DOC-MARK-----BEG*TER-----DOC-MARK----------
@@ -308,9 +386,11 @@ void FERSProducer::DoTerminate(){
 		fclose(m_file_lock);
 		m_file_lock = 0;
 	}
-	FERS_CloseReadout(handle);
-	HV_Set_OnOff( handle, 0); // set HV off
-	FERS_CloseDevice(handle);	
+        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+		FERS_CloseReadout(shmp->handle[brd]);
+		HV_Set_OnOff( shmp->handle[brd], 0); // set HV off
+		FERS_CloseDevice(shmp->handle[brd]);
+	}
 
 	// free shared memory
 	if (shmdt(shmp) == -1) {
@@ -335,8 +415,8 @@ void FERSProducer::RunLoop(){
 		// staircase?
 		static bool stairdone = false;
 
-		if (stair_do)
-		{	
+		if (stair_do) // Check if it works with DT5215 ...
+		{
 			std::vector<uint8_t> hit(x_pixel*y_pixel, 0);
 			hit[position(gen)] = signal(gen);
 
@@ -492,12 +572,54 @@ void FERSProducer::RunLoop(){
 
 			// real data
 			// 
-			status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+			//SpectEvent_t EventSpect0;
+			//SpectEvent_t EventSpect1;
+			//SpectEvent_t EventSpect2;
+			int r_status=0;
+		        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+				status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+				if (status>1) break;
+				if (DataQualifier==47)  // Service event
+	                                status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+				std::cout<<"---3333---  status="<<status<<" board=" << bindex
+					<<" DataQualifier= "<<DataQualifier
+					<<" tstamp_us= "<<tstamp_us
+					<<" nb= "<<nb<<std::endl;
+
+				if ( DataQualifier >0 ) {
+					std::vector<uint8_t> data;
+					if(DataQualifier==17) DataQualifier=1;
+
+
+					make_header(brd, DataQualifier, &data);
+					FERSpackevent(Event, DataQualifier, &data);
+
+					//if(brd==0) EventSpect0 = *(SpectEvent_t*)Event;
+					//if(brd==1) EventSpect1 = *(SpectEvent_t*)Event;
+					//if(brd==1) EventSpect2 = *(SpectEvent_t*)Event;
+
+					uint32_t block_id = m_plane_id + brd;
+					ev->AddBlock(block_id, data);
+					trigger_n++;
+					std::this_thread::sleep_until(tp_end_of_busy);
+				}
+
+
+			}
 			//
-			std::cout<<"--FERS_ReadoutStatus (0=idle, 1=running) = " << FERS_ReadoutStatus <<std::endl;
-			std::cout<<"--status of FERS_GetEvent (0=No Data, 1=Good Data 2=Not Running, <0 = error) = "<< std::to_string(status)<<std::endl;
-			std::cout<<"  --bindex = "<< std::to_string(bindex) <<" tstamp_us = "<< std::to_string(tstamp_us) <<std::endl;
-			std::cout<<"  --DataQualifier = "<< std::to_string(DataQualifier) +" nb = "<< std::to_string(nb) <<std::endl;
+			//std::cout<<"--FERS_ReadoutStatus (0=idle, 1=running) = " << FERS_ReadoutStatus <<std::endl;
+			//std::cout<<"--status of FERS_GetEvent (0=No Data, 1=Good Data 2=Not Running, <0 = error) = "<< std::to_string(status)<<std::endl;
+			//std::cout<<"  --bindex = "<< std::to_string(bindex) <<" tstamp_us = "<< std::to_string(tstamp_us) <<std::endl;
+			//std::cout<<"  --DataQualifier = "<< std::to_string(DataQualifier) +" nb = "<< std::to_string(nb) <<std::endl;
+
+			SendEvent(std::move(ev));
+
+			//std::cout<<EventSpect0.trigger_id
+			//	<<"  "<<EventSpect1.trigger_id
+			//	<<"  "<<EventSpect2.trigger_id<<std::endl;
+
+			//std::cout<<EventSpect0.energyLG[10]<<"  "<<EventSpect1.energyLG[10]<<std::endl;
+			//std::cout<<EventSpect0.energyHG[10]<<"  "<<EventSpect1.energyHG[10]<<std::endl;
 
 			// simulated spectroscopy data
 			// 
@@ -523,23 +645,33 @@ void FERSProducer::RunLoop(){
 
 
 			// event creation
-			if ( DataQualifier >0 ) {
-				std::vector<uint8_t> data;
-				//make_header(handle, x_pixel, y_pixel, DataQualifier, &data);
-				
-				//Bug fix (it needs to implement the event with both HG and LG)
-				//At the moment the next line offer a simple solution to overcome this problem
-				if(DataQualifier==17) DataQualifier=1;
-				
-				make_header(brd, DataQualifier, &data);
-				std::cout<<"producer > " << "x_pixel: " <<	x_pixel << " y_pixel: " << y_pixel << " DataQualifier : " <<	DataQualifier << std::endl;
-				FERSpackevent(Event, DataQualifier, &data);
-				uint32_t block_id = m_plane_id;
-				ev->AddBlock(block_id, data);
-				SendEvent(std::move(ev));
-				trigger_n++;
-				std::this_thread::sleep_until(tp_end_of_busy);
-			}
+//			if ( DataQualifier >0 ) {
+//				std::vector<uint8_t> data;
+//				//make_header(handle, x_pixel, y_pixel, DataQualifier, &data);
+//
+//				//Bug fix (it needs to implement the event with both HG and LG)
+//				//At the moment the next line offer a simple solution to overcome this problem
+//				if(DataQualifier==17) DataQualifier=1;
+//
+//
+//				make_header(brd, DataQualifier, &data);
+//
+//				std::cout<<"1 producer > "  << " DataQualifier : " <<	DataQualifier 
+//					 << " data size "<< data.size()
+//					 <<std::endl;
+//
+//				FERSpackevent(Event, DataQualifier, &data);
+//
+//				std::cout<<"2 producer > "  << " DataQualifier : " <<	DataQualifier 
+//					 << " data size "<< data.size()
+//					 <<std::endl;
+//
+//				uint32_t block_id = m_plane_id;
+//				ev->AddBlock(block_id, data);
+//				SendEvent(std::move(ev));
+//				trigger_n++;
+//				std::this_thread::sleep_until(tp_end_of_busy);
+//			}
 		} // if (stair_do)
 	}
 }
