@@ -54,6 +54,7 @@ class FERSProducer : public eudaq::Producer {
 		void DoTerminate() override;
 		void DoReset() override;
 		void RunLoop() override;
+		void make_evtCnt_corr(std::map<int, std::deque<SpectEvent_t>>* m_conn_evque);
 
 		static const uint32_t m_id_factory = eudaq::cstr2hash("FERSProducer");
 
@@ -63,6 +64,7 @@ class FERSProducer : public eudaq::Producer {
 		uint32_t m_plane_id;
 		FILE* m_file_lock;
 		std::chrono::milliseconds m_ms_busy;
+		std::chrono::microseconds m_us_evt_length; // fake event length used in sync
 		bool m_exit_of_run;
 
 		std::string fers_ip_address;  // IP address of the board
@@ -72,11 +74,15 @@ class FERSProducer : public eudaq::Producer {
 		float fers_hv_imax;
 		int fers_acq_mode;
 		int vhandle[FERSLIB_MAX_NBRD];
+
 		// staircase params
 		uint8_t stair_do;
 		uint16_t stair_start, stair_stop, stair_step, stair_shapingt;
 		uint32_t stair_dwell_time;
 
+
+  		std::map<int, std::deque<SpectEvent_t>> m_conn_evque;
+  		std::map<int, SpectEvent_t> m_conn_ev;
 
 		//struct shmseg *shmp;
 		//int shmid;
@@ -99,7 +105,11 @@ FERSProducer::FERSProducer(const std::string & name, const std::string & runcont
 //----------DOC-MARK-----BEG*INI-----DOC-MARK----------
 void FERSProducer::DoInitialise(){
 	// see https://www.tutorialspoint.com/inter_process_communication/inter_process_communication_shared_memory.htm
+	//EUDAQ_WARN("producer constructor: sizeof(struct shmseg) = "+std::to_string(sizeof(struct shmseg)));
+	//EUDAQ_WARN("producer constructor: sizeof(struct shmseg) = "+std::to_string(SHM_KEY));
+	//EUDAQ_WARN("producer constructor: sizeof(struct shmseg) = "+std::to_string(0644|IPC_CREAT));
 	shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
+	//shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0);
 	if (shmid == -1) {
 		perror("Shared memory");
 	}
@@ -112,7 +122,6 @@ void FERSProducer::DoInitialise(){
 	}
 
 	initshm( shmid );
-	//shmp->connectedboards = 0;
 
 
 	auto ini = GetInitConfiguration();
@@ -177,7 +186,7 @@ void FERSProducer::DoInitialise(){
 						std::string fers_prodid = ini->Get("FERS_PRODID","no prod ID");
 						strcpy(shmp->IP[shmp->connectedboards],       tmp_path);
 						strcpy(shmp->desc[shmp->connectedboards],     std::to_string(FERS_pid(handle)).c_str());
-						strcpy(shmp->location[shmp->connectedboards], fers_id.c_str());
+						//strcpy(shmp->location[shmp->connectedboards], fers_id.c_str());
 						strcpy(shmp->producer[shmp->connectedboards], fers_prodid.c_str());
 
 
@@ -185,10 +194,11 @@ void FERSProducer::DoInitialise(){
 							+std::string(shmp->IP[shmp->connectedboards])
 							+"*"+std::string(shmp->desc[shmp->connectedboards])
 							+"*"+std::to_string(shmp->handle[shmp->connectedboards])
-							+"*"+std::string(shmp->location[shmp->connectedboards])
+							//+"*"+std::string(shmp->location[shmp->connectedboards])
 							+"*"+std::string(shmp->producer[shmp->connectedboards])
 						);
-
+						m_conn_evque[shmp->connectedboards].clear();
+						shmp->EvCntCorrFERS[shmp->connectedboards]=0;
 						shmp->connectedboards++;
 					}else{
 		   				EUDAQ_THROW("Bords at "+std::string(tmp_path)
@@ -200,6 +210,17 @@ void FERSProducer::DoInitialise(){
 			}
 		}
 	}
+
+
+	shmp->EvCntCorrCommonFERS = 0;
+	shmp->isEvtCntCorrFERSReady = false;
+	shmp->isEvtCntCorrCommonFERSReady = false;
+
+
+
+
+
+
 	//EUDAQ_INFO("ret= "+std::to_string(ret)
 	//		+" WDcfg.NumBrd "+std::to_string(WDcfg.NumBrd)
 	//	  );
@@ -252,6 +273,8 @@ void FERSProducer::DoConfigure(){
 	conf->Print(std::cout);
 	m_plane_id = conf->Get("EX0_PLANE_ID", 0);
 	m_ms_busy = std::chrono::milliseconds(conf->Get("EX0_DURATION_BUSY_MS", 1000));
+	m_us_evt_length = std::chrono::microseconds(400); // used in sync.
+
 	m_flag_ts = conf->Get("EX0_ENABLE_TIMESTAMP", 0);
 	m_flag_tg = conf->Get("EX0_ENABLE_TRIGERNUMBER", 0);
 	if(!m_flag_ts && !m_flag_tg){
@@ -282,6 +305,8 @@ void FERSProducer::DoConfigure(){
 		}
 	}
 	fclose(conf_file);
+        //WDcfg.EHistoNbin = 4096; 
+	std:: cout<< " WDcfg.Pedestal " << WDcfg.Pedestal <<std::endl;
 	//EUDAQ_WARN( "AcquisitionMode: "+std::to_string(WDcfg.AcquisitionMode));
 
 	fers_hv_vbias = conf->Get("FERS_HV_Vbias", 0);
@@ -289,14 +314,16 @@ void FERSProducer::DoConfigure(){
 	float fers_dummyvar = 0;
 	int ret_dummy = 0;
 
+        //FERS_SetEnergyBitsRange(WDcfg.Range_14bit);
+        FERS_SetEnergyBitsRange(0);
+	//std:: cout<< " WDcfg.Range_14bit " << WDcfg.Range_14bit <<std::endl;
         for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
-		//ret = ConfigureFERS(handle, 0); // 0 = hard, 1 = soft (no acq restart)
 		ret = ConfigureFERS(shmp->handle[brd], 0); // 0 = hard, 1 = soft (no acq restart)
 		if (ret != 0)
 		{
 			EUDAQ_THROW("ConfigureFERS failed "+std::to_string(shmp->handle[brd]));
 		}
-
+	        //ret |= FERS_SetCommonPedestal( shmp->handle[brd], 50);
 		std::cout << "\n**** FERS_HV_Imax from config: "<< fers_hv_imax <<  std::endl;
 		ret = HV_Set_Imax( shmp->handle[brd], fers_hv_imax);
 		ret = HV_Set_Imax( shmp->handle[brd], fers_hv_imax);
@@ -346,9 +373,21 @@ void FERSProducer::DoConfigure(){
 //----------DOC-MARK-----BEG*RUN-----DOC-MARK----------
 void FERSProducer::DoStartRun(){
 	m_exit_of_run = false;
+
+  std::chrono::time_point<std::chrono::high_resolution_clock> tp_start_aq = std::chrono::high_resolution_clock::now();
+  shmp->FERS_Aqu_start_time_us=tp_start_aq;
+  //auto tp_start_aq_duration = std::chrono::duration_cast<std::chrono::microseconds>(shmp->FERS_Aqu_start_time_us.time_since_epoch());
+  //std::cout<<"---3333---  time[us] = " << tp_start_aq_duration.count() <<std::endl;
+
+  shmp->FERS_offset_us = 0;
+
 	// here the hardware is told to startup
         for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
 		FERS_SendCommand( shmp->handle[brd], CMD_ACQ_START );
+		m_conn_evque[brd].clear();
+     		//auto return_sq = std::chrono::steady_clock::now();
+     		//auto time_difference = std::chrono::duration_cast<std::chrono::microseconds>(return_sq - tp_start_aq);
+
 	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
 }
@@ -358,8 +397,10 @@ void FERSProducer::DoStopRun(){
 	m_exit_of_run = true;
         for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
 		FERS_SendCommand( shmp->handle[brd], CMD_ACQ_STOP );
+		m_conn_evque[brd].clear();
 	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
+        shmp->FERS_offset_us = 0;
 }
 
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
@@ -386,6 +427,8 @@ void FERSProducer::DoTerminate(){
 		fclose(m_file_lock);
 		m_file_lock = 0;
 	}
+
+	if ( shmp != NULL )
         for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
 		FERS_CloseReadout(shmp->handle[brd]);
 		HV_Set_OnOff( shmp->handle[brd], 0); // set HV off
@@ -417,6 +460,8 @@ void FERSProducer::RunLoop(){
 
 		if (stair_do) // Check if it works with DT5215 ...
 		{
+/*
+
 			std::vector<uint8_t> hit(x_pixel*y_pixel, 0);
 			hit[position(gen)] = signal(gen);
 
@@ -424,18 +469,6 @@ void FERSProducer::RunLoop(){
 			int DataQualifier = -1;
 			void *Event;
 
-
-			auto ev = eudaq::Event::MakeUnique("FERSProducer");
-			ev->SetTag("Plane ID", std::to_string(m_plane_id));
-			auto tp_trigger = std::chrono::steady_clock::now();
-			auto tp_end_of_busy = tp_trigger + m_ms_busy;
-			if(m_flag_ts){
-				std::chrono::nanoseconds du_ts_beg_ns(tp_trigger - tp_start_run);
-				std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
-				ev->SetTimestamp(du_ts_beg_ns.count(), du_ts_end_ns.count());
-			}
-			if(m_flag_tg)
-				ev->SetTriggerN(trigger_n);
 
 
 			if (!stairdone)
@@ -543,27 +576,17 @@ void FERSProducer::RunLoop(){
 				EUDAQ_INFO("Producer > staircase event sent");
 				EUDAQ_WARN("*** *** PLEASE STOP THE RUN *** ***");
 			}
-
+*/
 		} else { // not staircase
 
+			auto tp_trigger = std::chrono::steady_clock::now();
+			auto tp_end_of_busy = tp_trigger + m_ms_busy;
 			std::vector<uint8_t> hit(x_pixel*y_pixel, 0);
 			hit[position(gen)] = signal(gen);
 
 			int nchan = x_pixel*y_pixel;
 			int DataQualifier = -1;
 			void *Event;
-
-			auto ev = eudaq::Event::MakeUnique("FERSProducer");
-			ev->SetTag("Plane ID", std::to_string(m_plane_id));
-			auto tp_trigger = std::chrono::steady_clock::now();
-			auto tp_end_of_busy = tp_trigger + m_ms_busy;
-			if(m_flag_ts){
-				std::chrono::nanoseconds du_ts_beg_ns(tp_trigger - tp_start_run);
-				std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
-				ev->SetTimestamp(du_ts_beg_ns.count(), du_ts_end_ns.count());
-			}
-			if(m_flag_tg)
-				ev->SetTriggerN(trigger_n);
 
 			double tstamp_us = -1;
 			int nb = -1;
@@ -576,104 +599,215 @@ void FERSProducer::RunLoop(){
 			//SpectEvent_t EventSpect1;
 			//SpectEvent_t EventSpect2;
 			int r_status=0;
+			//std::cout<<"---3333---  --------------------------------"<<std::endl;
+
 		        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
 				status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
-				if (status>1) break;
+				//if (status>1) break;
 				if (DataQualifier==47)  // Service event
 	                                status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
-				std::cout<<"---3333---  status="<<status<<" board=" << bindex
-					<<" DataQualifier= "<<DataQualifier
-					<<" tstamp_us= "<<tstamp_us
-					<<" nb= "<<nb<<std::endl;
+				if(nb>0&&DataQualifier==17) {
+					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
+					m_conn_evque[bindex].push_back(*EventSpect);
 
-				if ( DataQualifier >0 ) {
-					std::vector<uint8_t> data;
-					if(DataQualifier==17) DataQualifier=1;
-
-
-					make_header(brd, DataQualifier, &data);
-					FERSpackevent(Event, DataQualifier, &data);
-
-					//if(brd==0) EventSpect0 = *(SpectEvent_t*)Event;
-					//if(brd==1) EventSpect1 = *(SpectEvent_t*)Event;
-					//if(brd==1) EventSpect2 = *(SpectEvent_t*)Event;
-
-					uint32_t block_id = m_plane_id + brd;
-					ev->AddBlock(block_id, data);
-					trigger_n++;
-					std::this_thread::sleep_until(tp_end_of_busy);
+					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
+					//	<<" DataQualifier= "<<DataQualifier
+					//	<<" tstamp_us= "<<int((int(tstamp_us)+10130*(bindex+1))/1000)
+					//	<<" trigger_id = "<<EventSpect->trigger_id
+					//	<<" energyLG[1] = "<<EventSpect->energyLG[1]
+					//	<<" nb= "<<nb<<std::endl;
 				}
+			}
 
+
+    			int Nevt = 128;
+
+			// check if there is enough DRS data to asample an event 
+    			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+                		int qsize = m_conn_evque[brd].size();
+               			if( qsize < Nevt) Nevt = qsize;
+    			}
+
+			// Calculate the event missalighnment 
+			if(!shmp->isEvtCntCorrFERSReady && Nevt) {
+        			FERSProducer::make_evtCnt_corr(&m_conn_evque);
+			        for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+					EUDAQ_WARN("FERS: board "+std::to_string(brd)
+					+" Local EvCntCorr "+std::to_string(shmp->EvCntCorrFERS[brd]));
+        			}
+    			}
+			// Remove unmatched pre-triggers
+			if(shmp->isEvtCntCorrFERSReady&&Nevt>0&&trigger_n<300) {
+        	                for(auto &conn_evque: m_conn_evque){
+	                                int trigger_n_ev = conn_evque.second.front().trigger_id+shmp->EvCntCorrFERS[conn_evque.first]+shmp->EvCntCorrCommonFERS;
+                        	        if(trigger_n_ev<0) {
+						conn_evque.second.pop_front();
+						Nevt = 0;
+					}
+	                       }
 
 			}
+
+			// Ready to transmit the queued events with calculate Evt# offset
+			for(int ievt = 0; ievt<Nevt; ievt++) {
+
+				auto ev = eudaq::Event::MakeUnique("FERSProducer");
+				ev->SetTag("Plane ID", std::to_string(m_plane_id));
+
+	            		trigger_n=-1;
+        	    		for(auto &conn_evque: m_conn_evque){
+                			int trigger_n_ev = conn_evque.second.front().trigger_id;  // Ev counter
+					trigger_n_ev+= shmp->EvCntCorrFERS[conn_evque.first] + shmp->EvCntCorrCommonFERS;
+					if(trigger_n_ev<0) {
+						conn_evque.second.pop_front();
+					}else{
+        	        			if(trigger_n_ev< trigger_n||trigger_n<0)
+                	  				trigger_n = trigger_n_ev;
+					}
+				}
+
+				if(m_flag_tg)
+					ev->SetTriggerN(trigger_n);
+
+
+
+				m_conn_ev.clear(); // Just in case ...
+
+		            	for(auto &conn_evque: m_conn_evque){
+        	        		auto &ev_front = conn_evque.second.front();
+                			int ibrd = conn_evque.first;
+                			if(ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd] + shmp->EvCntCorrCommonFERS == trigger_n){
+                        			m_conn_ev[ibrd]=ev_front;
+                        			conn_evque.second.pop_front();
+	                		}
+        	    		}
+
+                                        //std::cout<<"---3333---  ievt= "<<ievt
+                                        //        <<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id+shmp->EvCntCorrFERS[brd]
+                                        //        <<" m_conn_ev.size() = "<<m_conn_ev.size()
+                                        //        <<" trigger_n = "<<trigger_n
+                                        //        <<std::endl;
+
+                                        //std::cout<<"---3333---  trigger_id = " << trigger_n <<std::endl;
+
+	            		if(m_conn_ev.size()!=shmp->connectedboards) {
+        	        		EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
+                	        		+" board's records instead of "+std::to_string(shmp->connectedboards) );
+            			}else{
+
+					//std::cout<<"---3333---  ------------------------- "<<std::endl;
+                			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+						if( m_flag_ts && brd==0 ){
+							auto du_ts_beg_us = std::chrono::duration_cast<std::chrono::microseconds>(shmp->FERS_Aqu_start_time_us - get_midnight_today());
+							auto tp_trigger0 = std::chrono::microseconds(static_cast<long int>(m_conn_ev[brd].tstamp_us));
+							du_ts_beg_us += tp_trigger0;
+							//std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
+							std::chrono::microseconds du_ts_end_us(du_ts_beg_us + m_us_evt_length);
+							ev->SetTimestamp(du_ts_beg_us.count(), du_ts_end_us.count());
+							//std::cout<<"---3333--- du_ts_beg_us "<<du_ts_beg_us.count()<<" du_ts_end_us "<<du_ts_end_us.count()<<std::endl;
+						}
+                        			std::vector<uint8_t> data;
+
+						make_header(brd, FERS_pid(vhandle[brd]), &data);
+        	                		// Add data here
+						//FERSpackevent(Event, DataQualifier, &data);
+						//FERSpackevent( static_cast<void*>(&m_conn_ev[brd]), DataQualifier, &data);
+						FERSpack_spectevent(static_cast<void*>(&m_conn_ev[brd]),&data);
+						//std::cout<<"---3333---  m_conn_ev[brd].trigger_id "<<m_conn_ev[brd].trigger_id<<std::endl;
+						//std::cout<<"---3333---  m_conn_ev[brd].tstamp_us/1000. "<<m_conn_ev[brd].tstamp_us/1000<<std::endl;
+						//std::cout<<"---3333---  data.size() "<<data.size()<<std::endl;
+
+						//std::cout<<(static_cast<SpectEvent_t*>(&m_conn_ev[brd]))->energyLG[1]<<std::endl;
+						uint32_t block_id = m_plane_id + brd;
+
+						//int n_blocks = ev->AddBlock(block_id, data);
+						//std::cout<<"---3333---  brd="<<brd
+						//<<" block_id  "<<n_blocks
+						//<<std::endl;
+
+						int n_blocks = ev->AddBlock(block_id, data);
+
+						//std::cout<<"---3333---  brd="<<brd
+			
+			//	<<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id+shmp->EvCntCorrFERS[brd]
+						//	<<" block_id  "<<block_id
+						//	<<std::endl;
+	                		}
+
+					//ev->Print(std::cout);
+					SendEvent(std::move(ev));
+
+					m_conn_ev.clear();
+
+        	    		}//m_conn_ev.size check
+			} // Nevt
+
+
+
 			//
 			//std::cout<<"--FERS_ReadoutStatus (0=idle, 1=running) = " << FERS_ReadoutStatus <<std::endl;
 			//std::cout<<"--status of FERS_GetEvent (0=No Data, 1=Good Data 2=Not Running, <0 = error) = "<< std::to_string(status)<<std::endl;
 			//std::cout<<"  --bindex = "<< std::to_string(bindex) <<" tstamp_us = "<< std::to_string(tstamp_us) <<std::endl;
 			//std::cout<<"  --DataQualifier = "<< std::to_string(DataQualifier) +" nb = "<< std::to_string(nb) <<std::endl;
 
-			SendEvent(std::move(ev));
-
-			//std::cout<<EventSpect0.trigger_id
-			//	<<"  "<<EventSpect1.trigger_id
-			//	<<"  "<<EventSpect2.trigger_id<<std::endl;
-
-			//std::cout<<EventSpect0.energyLG[10]<<"  "<<EventSpect1.energyLG[10]<<std::endl;
-			//std::cout<<EventSpect0.energyHG[10]<<"  "<<EventSpect1.energyHG[10]<<std::endl;
-
-			// simulated spectroscopy data
-			// 
-			//std::cout<<"TRYING to CREATE an HARDCODED spectroscopy event"<<std::endl;
-			//DataQualifier = DTQ_SPECT;
-			//SpectEvent_t EventSpect;// = (SpectEvent_t*)Event;
-			////EventSpect.tstamp_us  = (double)(  1000);
-			////EventSpect.trigger_id = (uint64_t) 100;
-			//EventSpect.tstamp_us  = (double)trigger_n;
-			//EventSpect.trigger_id = (uint64_t)trigger_n;
-			//EventSpect.chmask     = (uint64_t) 120;
-			//EventSpect.qdmask     = (uint64_t) 130;
-			//for(uint16_t i=0; i<nchan; i++){
-			//  EventSpect.energyHG[i] = (uint16_t)( 200 + i + trigger_n);
-			//  EventSpect.energyLG[i] = (uint16_t)( 100 + i + trigger_n);
-			//  EventSpect.tstamp[i]   = (uint32_t)(1000 + i); // used in TSPEC mode only
-			//  EventSpect.ToT[i]      = (uint16_t)(  10 + i); // used in TSPEC mode only
-			//}
-			//Event =&EventSpect;
-			//nb = sizeof(EventSpect);
-			//std::cout<<"****** event structure filled: "<< sizeof(EventSpect) <<" bytes, pointer: "<< Event<<std::endl;
+			std::this_thread::sleep_until(tp_end_of_busy);
 
 
-
-			// event creation
-//			if ( DataQualifier >0 ) {
-//				std::vector<uint8_t> data;
-//				//make_header(handle, x_pixel, y_pixel, DataQualifier, &data);
-//
-//				//Bug fix (it needs to implement the event with both HG and LG)
-//				//At the moment the next line offer a simple solution to overcome this problem
-//				if(DataQualifier==17) DataQualifier=1;
-//
-//
-//				make_header(brd, DataQualifier, &data);
-//
-//				std::cout<<"1 producer > "  << " DataQualifier : " <<	DataQualifier 
-//					 << " data size "<< data.size()
-//					 <<std::endl;
-//
-//				FERSpackevent(Event, DataQualifier, &data);
-//
-//				std::cout<<"2 producer > "  << " DataQualifier : " <<	DataQualifier 
-//					 << " data size "<< data.size()
-//					 <<std::endl;
-//
-//				uint32_t block_id = m_plane_id;
-//				ev->AddBlock(block_id, data);
-//				SendEvent(std::move(ev));
-//				trigger_n++;
-//				std::this_thread::sleep_until(tp_end_of_busy);
-//			}
 		} // if (stair_do)
-	}
+	}// while !m_exit_of_run 
 }
 //----------DOC-MARK-----END*IMP-----DOC-MARK----------
 
+void FERSProducer::make_evtCnt_corr(std::map<int, std::deque<SpectEvent_t>>* m_conn_evque) {
+    if (m_conn_evque == nullptr) {
+        // Handle null pointer
+        return;
+    }else{
+
+        auto it = m_conn_evque->find(0);
+        std::deque<SpectEvent_t>& eventDeque = it->second;
+
+        std::vector<double> EvT;
+        EvT.reserve(eventDeque.size()); // Reserve memory for efficiency
+        for (const auto& event : eventDeque) {
+                EvT.push_back(static_cast<double>(event.tstamp_us));
+        }
+
+        for(int brd = 0; brd<shmp->connectedboards;brd++){
+                int matching_index = -1;
+
+                auto it = m_conn_evque->find(brd);
+                std::deque<SpectEvent_t>& eventDeque = it->second;
+                std::vector<double> TrigTime;
+                TrigTime.reserve(eventDeque.size());
+                for (const auto& event : eventDeque) {
+                        TrigTime.push_back(static_cast<double>(event.tstamp_us));
+                }
+
+		if(TrigTime.size()<1)return;
+
+                for (size_t idx = 0; idx < EvT.size(); idx++) {
+                        double value = EvT[idx] ; // in microseconds
+                        for (double df_value : TrigTime) {
+                                double tmp_value = df_value + 10130 * (brd); // in microseconds
+                                if (std::abs(value - tmp_value) <= 333) { // in microseconds
+                                        matching_index = idx;
+                                        break;
+                                }
+                        }
+                        if (matching_index != -1) {
+                                shmp->EvCntCorrFERS[brd]=matching_index;
+                                break;
+                        }
+                }
+        }
+
+        int max_value = *std::max_element(shmp->EvCntCorrFERS, shmp->EvCntCorrFERS + shmp->connectedboards);
+        for(int brd = 0; brd<shmp->connectedboards;brd++)
+                 shmp->EvCntCorrFERS[brd]-=max_value;
+
+
+        shmp->isEvtCntCorrFERSReady = true;
+    }
+    return;
+}

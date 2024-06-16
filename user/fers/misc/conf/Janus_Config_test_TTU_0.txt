@@ -6,6 +6,7 @@
 # ------------------------------------------------------------------------------------------
 Open[0] eth:192.168.50.125:tdl:0:1
 Open[1] eth:192.168.50.125:tdl:0:0
+Open[2] eth:192.168.50.125:tdl:3:0
 
 
 # ******************************************************************************************
@@ -60,7 +61,7 @@ OF_Staircase                       0                    # Staircase
 # ------------------------------------------------------------------------------------------
 AcquisitionMode                    SPECTROSCOPY         # Acquisition mode. Options: SPECTROSCOPY, SPECT_TIMING, TIMING_CSTART, TIMING_CSTOP, COUNTING, WAVEFORM
 EnableToT                          1                    # Enable ToT in timing mode (Enabled: ToA = 16 bits, ToT = 9 bits; Disabled: ToA = 25 bits)
-BunchTrgSource                     PTRG                 # Bunch Trigger source (for spectroscopy and counting modes). Options: T0-IN, T1-IN, Q-OR, T-OR, TLOGIC, PTRG
+BunchTrgSource                     T0-IN                # Bunch Trigger source (for spectroscopy and counting modes). Options: T0-IN, T1-IN, Q-OR, T-OR, TLOGIC, PTRG
 VetoSource                         DISABLED             # The veto signal inhibits the bunch trigger (active high). Options: DISABLED, SW_CMD, T0-IN, T1-IN
 ValidationSource                   T0-IN                # Source of the trigger validation signal. It must arrive within the window is opened by the bunch trigger and closed after Tv ~= 120 ns + HoldDelay.. Options: SW_CMD, T0-IN, T1-IN
 ValidationMode                     DISABLED             # ACCEPT: Trigger validated by the signal in the val. window. REJECT: trigger rejected if no signal arrives in the val. window. Options: DISABLED, ACCEPT, REJECT. Options: DISABLED, ACCEPT, REJECT
@@ -75,8 +76,8 @@ PtrgPeriod                         10 ms                # Period of the internal
 TrefSource                         T1-IN                # Tref source for timing mode (common start/stop). Options: T0-IN, T1-IN, Q-OR, T-OR, PTRG, TLOGIC
 TrefWindow                         1.0 us               # Tref window (gate) in timing mode (common start/stop)
 TrefDelay                          0 ns                 # Tref delay in timing mode (can be negative)
-T0_Out                             BUNCHTRG             # T0_Out assignment. Options: T0-IN, BUNCHTRG, T-OR, TLOGIC, RUN, PTRG, BUSY, DPROBE, SQ_WAVE, TDL_SYNC, RUN_SYNC, ZERO
-T1_Out                             T1-IN                # T1_Out assignment. Options: T1-IN, BUNCHTRG, Q-OR, TLOGIC, RUN, PTRG, BUSY, DPROBE, SQ_WAVE, TDL_SYNC, RUN_SYNC, ZERO
+T0_Out                             ZERO                 # T0_Out assignment. Options: T0-IN, BUNCHTRG, T-OR, TLOGIC, RUN, PTRG, BUSY, DPROBE, SQ_WAVE, TDL_SYNC, RUN_SYNC, ZERO
+T1_Out                             ZERO                 # T1_Out assignment. Options: T1-IN, BUNCHTRG, Q-OR, TLOGIC, RUN, PTRG, BUSY, DPROBE, SQ_WAVE, TDL_SYNC, RUN_SYNC, ZERO
 ChEnableMask0                      0xFFFFFFFF           # Channel enable mask (ch 0..31)
 ChEnableMask1                      0xFFFFFFFF           # Channel enable mask (ch 32..63)
 
@@ -107,7 +108,7 @@ HG_ShapingTime                     25 ns                # Shaping Time of the sl
 LG_ShapingTime                     25 ns                # Shaping Time of the slow shaper (Low Gain). Options: 87.5 ns, 75 ns, 62.5 ns, 50 ns, 37.5 ns, 25 ns, 12.5 ns
 HoldDelay                          100 ns               # Delay between bunch trigger (start of peak detection) and hold (stop of peak detection)
 MuxClkPeriod                       300 ns               # Multiplexer readout speed. Best setting = 300 ns
-EHistoNbin                         4K                   # Number of channels (bins) in the PHA histogram. Options: DISABLED, 256, 512, 1K, 2K, 4K, 8K
+EHistoNbin                         8K                   # Number of channels (bins) in the PHA histogram. Options: DISABLED, 256, 512, 1K, 2K, 4K, 8K
 ToAHistoNbin                       4K                   # Number of channels (bins) in the ToA histogram. Options: DISABLED, 256, 512, 1K, 2K, 4K, 8K, 16K
 ToARebin                           1                    # Rebin factor for the ToA histogram
 ToAHistoMin                        0 ns                 # Minimum value of ToA (in ns) in the ToA histogram

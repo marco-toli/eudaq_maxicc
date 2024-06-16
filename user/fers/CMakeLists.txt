@@ -11,6 +11,8 @@ message(STATUS "user/fers is to be built (USER_FERS_BUILD=ON)")
 get_filename_component(EUDAQ_USERNAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 set(EUDAQ_MODULE eudaq_module_${EUDAQ_USERNAME})
 set(USER_HARDWARE_LIBRARY eudaq_static_${EUDAQ_USERNAME})
+set(CAEN_DIGI_LIBRARY CAENDigitizer)
+set(CAEN_COMM_LIBRARY CAENComm)
 
 include_directories(${EUDAQ_INCLUDE_DIRS})
 

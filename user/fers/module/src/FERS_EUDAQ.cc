@@ -111,6 +111,7 @@ void FERSpack_spectevent(void* Event, std::vector<uint8_t> *vec)
   // the following group of vars is not really needed. Used for debug purposes.
   // This is valid also for the other pack routines
   double   tstamp_us      = tmpEvent->tstamp_us ;
+  double   rel_tstamp_us      = tmpEvent->rel_tstamp_us ;
   uint64_t trigger_id     = tmpEvent->trigger_id;
   uint64_t chmask         = tmpEvent->chmask    ;
   uint64_t qdmask         = tmpEvent->qdmask    ;
@@ -120,6 +121,7 @@ void FERSpack_spectevent(void* Event, std::vector<uint8_t> *vec)
   uint16_t ToT[nchan]     ;
 
   FERSpack( 8*sizeof(double), tstamp_us,  vec);
+  FERSpack( 8*sizeof(double), rel_tstamp_us,  vec);
   FERSpack( 64,             trigger_id, vec);
   FERSpack( 64,             chmask,     vec);
   FERSpack( 64,             qdmask,     vec);
@@ -172,7 +174,7 @@ SpectEvent_t FERSunpack_spectevent(std::vector<uint8_t> *vec)
   if ( tsize != dsize ){
 	  EUDAQ_THROW("*** WRONG DATA SIZE FOR SPECT EVENT! "+std::to_string(tsize)+" vs "+std::to_string(dsize)+" ***");
   } else {
-	  EUDAQ_WARN("Size of data is right");
+	  //EUDAQ_WARN("Size of data is right");
   }
 
   bool debug = false; // toggle printing of debug info. This and if's below can be removed in production version
@@ -190,6 +192,21 @@ SpectEvent_t FERSunpack_spectevent(std::vector<uint8_t> *vec)
       tmpEvent.tstamp_us = FERSunpack64(index, data);
   }
   index += sd; // each element of data is uint8_t
+
+  switch(8*sd)
+  {
+    case 8:
+      tmpEvent.rel_tstamp_us = data.at(index); break;
+    case 16:
+      tmpEvent.rel_tstamp_us = FERSunpack16(index, data); break;
+    case 32:
+      tmpEvent.rel_tstamp_us = FERSunpack32(index, data); break;
+    case 64:
+      tmpEvent.rel_tstamp_us = FERSunpack64(index, data);
+  }
+  index += sd; // each element of data is uint8_t
+
+
   if (debug) EUDAQ_WARN("* index: "+std::to_string(index)+" read double tstamp_us: "+std::to_string(tmpEvent.tstamp_us));
   tmpEvent.trigger_id = FERSunpack64( index,data); index += 8;
   if (debug) EUDAQ_WARN("* index: "+std::to_string(index)+" read uint64_t trigger_id: "+std::to_string(tmpEvent.trigger_id));
@@ -538,31 +555,18 @@ StaircaseEvent_t FERSunpack_staircaseevent(std::vector<uint8_t> *vec){
 //////////////////////////
 // fill "data" with some info
 //void make_header(int handle, uint8_t x_pixel, uint8_t y_pixel, int DataQualifier, std::vector<uint8_t> *data)
-void make_header(int board, int DataQualifier, std::vector<uint8_t> *data)
+void make_header(int board, int PID, std::vector<uint8_t> *data)
 {
 	uint8_t n=0;
 	std::vector<uint8_t> vec;
 
 	// this are needed
-	//vec.push_back(x_pixel);
-	//vec.push_back(y_pixel);
-	vec.push_back((uint8_t)board);
-	vec.push_back((uint8_t)DataQualifier);
-	n+=2; //3
+	vec.push_back(static_cast<uint8_t> (board));
 
-	// ID info:
-	//FERS_BoardInfo_t binfo;
-	//FERS_ReadBoardInfo(handle, &binfo);
-
-	//handle
-	//vec.push_back((uint8_t)handle);
-	//n++;
-
-	// serial number
-	//int sernum=FERS_pid(handle);
-	//vec.push_back( (uint8_t)( (sernum >> 0) & 0xFF ) ) ;
-	//vec.push_back( (uint8_t)( (sernum >> 8) & 0xFF ) ) ;
-	//n+=2;
+        // Append PID (2 bytes)
+        vec.push_back(static_cast<uint8_t>((PID & 0xFF00) >> 8)); // High byte
+        vec.push_back(static_cast<uint8_t>(PID & 0x00FF));        // Low byte
+	n+=3;
 
 	// put everything in data, prefixing header with its size
 	data->push_back(n);
@@ -573,11 +577,14 @@ void make_header(int board, int DataQualifier, std::vector<uint8_t> *data)
 		data->push_back( vec.at(i) );
 	}
 }
+
+
+
 // reads back essential header info (see params)
 // prints them w/ board ID info with EUDAQ_WARN
 // returns index at which raw data starts
 //int read_header(std::vector<uint8_t> *vec, uint8_t *x_pixel, uint8_t *y_pixel, uint8_t *DataQualifier)
-int read_header(std::vector<uint8_t> *vec, int *board, uint8_t *DataQualifier)
+int read_header(std::vector<uint8_t> *vec, int *board, int *PID)
 {
 	std::vector<uint8_t> data(vec->begin(), vec->end());
 	int index = data.at(0);
@@ -590,7 +597,7 @@ int read_header(std::vector<uint8_t> *vec, int *board, uint8_t *DataQualifier)
 	//*y_pixel = data.at(2);
 	//*DataQualifier = data.at(3);
 	*board = data.at(1);
-	*DataQualifier = data.at(2);
+	*PID =  (static_cast<int>(data.at(2) << 8) | static_cast<int>(data.at(3)));
 
 	//uint8_t handle=data.at(4);
 	//uint16_t sernum=FERSunpack16(5,data);
@@ -637,7 +644,7 @@ void initshm( int shmid )
 		shmp->AcquisitionMode[i] = 0;
 		memset(shmp->IP       [i], '\0', MAXCHAR);
 		memset(shmp->desc     [i], '\0', MAXCHAR);
-		memset(shmp->location [i], '\0', MAXCHAR);
+		//memset(shmp->location [i], '\0', MAXCHAR);
 		memset(shmp->producer [i], '\0', MAXCHAR);
 		memset(shmp->collector[i], '\0', MAXCHAR);
 	}
@@ -662,7 +669,7 @@ void openasciistream(shmseg* shmp, int brd){
 	readme<<"AcquisitionMode: "<< a <<std::endl;
 	readme<<"header of ascii file: "<< asciiheader[a] <<std::endl;
 	readme<<"desc: "<< shmp->desc[brd] << std::endl;
-	readme<<"location:"<< shmp->location[brd] << std::endl;
+	//readme<<"location:"<< shmp->location[brd] << std::endl;
 	readme<<"IP:"<< shmp->IP[brd] << std::endl;
 	readme<<"HVbias:"<< std::to_string(shmp->HVbias[brd]) << std::endl;
 	readme<<"channels:"<< std::to_string(shmp->nchannels[brd]) << std::endl;
@@ -700,7 +707,7 @@ void dumpshm( struct shmseg* shmp, int brd )
 {
 	std::string output = "*** shmp["+std::to_string(brd)+"]="+
 	" desc: "+shmp->desc[brd]+
-	" location:"+shmp->location[brd]+
+	//" location:"+shmp->location[brd]+
 	"";
 	EUDAQ_WARN(output);
 	output = "*** shmp["+std::to_string(brd)+"]="+

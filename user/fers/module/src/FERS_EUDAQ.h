@@ -12,6 +12,9 @@
 #include "paramparser.h"
 #include <map>
 
+#include "FERS_EUDAQ_shm.h"
+
+
 extern std::fstream runfile[MAX_NBRD]; // pointers to ascii output data files
 
 #define DTQ_STAIRCASE 10
@@ -83,7 +86,8 @@ void make_header(int board, int DataQualifier, std::vector<uint8_t> *data);
 // prints them w/ board ID info with EUDAQ_WARN
 // returns index at which raw data starts
 //int read_header(std::vector<uint8_t> *data, uint8_t *x_pixel, uint8_t *y_pixel, uint8_t *DataQualifier);
-int read_header(std::vector<uint8_t> *data, int *board, uint8_t *DataQualifier);
+//int read_header(std::vector<uint8_t> *data, int *board, uint8_t *DataQualifier);
+int read_header(std::vector<uint8_t> *data, int *board, int *PID);
 
 void dump_vec(std::string title, std::vector<uint8_t> *vec, int start=0, int stop=0);
 
@@ -109,28 +113,6 @@ uint64_t FERSunpack64(int index, std::vector<uint8_t> vec);
 ///////////////////////  FUNCTIONS IN ALPHA STATE  /////////////////////
 ///////////////////////  NO DEBUG IS DONE. AT ALL! /////////////////////
 
-// shared structure
-#include <iostream>
-#include <fstream>
-#include<sys/ipc.h>
-#include<sys/shm.h>
-#include<sys/types.h>
-#define SHM_KEY 0x12345
-#define MAXCHAR 30 // max size of chars in following struct. DON'T MAKE IT TOO BIG!!!
-struct shmseg {
-	int connectedboards = 0; // number of connected boards
-	int nchannels[MAX_NBRD];
-	int handle[MAX_NBRD]; // handle is given by FERS_OpenDevice()
-	int AcquisitionMode[MAX_NBRD];
-	//from ini file:
-	char IP[MAX_NBRD][MAXCHAR]; // IP address
-	char desc[MAX_NBRD][MAXCHAR]; // for example serial number
-	char location[MAX_NBRD][MAXCHAR]; // for instance "on the scope"
-	char producer[MAX_NBRD][MAXCHAR]; // title of producer
-	// from conf file:
-	float HVbias[MAX_NBRD]; // HV bias
-	char collector[MAX_NBRD][MAXCHAR]; // title of data collector
-};
 void initshm( int shmid );
 void openasciistream(shmseg* shmp, int brd );
 void closeasciistream(shmseg* shmp);

@@ -1,0 +1,585 @@
+#include "eudaq/Producer.hh"
+#include "DRS_EUDAQ.h"
+#include "CAENDigitizer.h"
+#include "WDconfig.h"
+#include <iostream>
+#include <fstream>
+#include <ratio>
+#include <chrono>
+#include <thread>
+#include <random>
+#ifndef _WIN32
+#include <sys/file.h>
+#endif
+
+
+
+
+
+
+//----------DOC-MARK-----BEG*DEC-----DOC-MARK----------
+class DRSProducer : public eudaq::Producer {
+  public:
+  DRSProducer(const std::string & name, const std::string & runcontrol);
+  void DoInitialise() override;
+  void DoConfigure() override;
+  void DoStartRun() override;
+  void DoStopRun() override;
+  void DoTerminate() override;
+  void DoReset() override;
+  void RunLoop() override;
+  void make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>>* m_conn_evque);
+
+
+  static const uint32_t m_id_factory = eudaq::cstr2hash("DRSProducer");
+private:
+  bool m_flag_ts;
+  bool m_flag_tg;
+  uint32_t m_plane_id;
+  FILE* m_file_lock;
+  std::chrono::milliseconds m_ms_busy;
+  std::chrono::microseconds m_us_evt_length; // fake event length used in sync
+  bool m_exit_of_run;
+
+  int handle =-1;                 // Single Board handle
+  int vhandle[16];		  // All Boards handles
+  int PID_DRS[16];
+
+  WaveDumpConfig_t   WDcfg;
+  int V4718_PID =58232;
+  int ret, NBoardsDRS =0 ;
+  uint32_t AllocatedSize, BufferSize, NumEvents;
+  CAEN_DGTZ_BoardInfo_t   BoardInfo;
+  CAEN_DGTZ_EventInfo_t   EventInfo;
+  CAEN_DGTZ_X742_EVENT_t  *Event742=NULL;  /* custom event struct with 8 bit data (only for 8 bit digitizers) */
+  char *EventPtr = NULL;
+  char *buffer = NULL;
+
+  std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>> m_conn_evque;
+  std::map<int, CAEN_DGTZ_X742_EVENT_t> m_conn_ev;
+
+  struct shmseg *shmp;
+  int shmid;
+
+};
+//----------DOC-MARK-----END*DEC-----DOC-MARK----------
+//----------DOC-MARK-----BEG*REG-----DOC-MARK----------
+namespace{
+  auto dummy0 = eudaq::Factory<eudaq::Producer>::
+    Register<DRSProducer, const std::string&, const std::string&>(DRSProducer::m_id_factory);
+}
+//----------DOC-MARK-----END*REG-----DOC-MARK----------
+//----------DOC-MARK-----BEG*CON-----DOC-MARK----------
+DRSProducer::DRSProducer(const std::string & name, const std::string & runcontrol)
+  :eudaq::Producer(name, runcontrol), m_file_lock(0), m_exit_of_run(false){  
+}
+//----------DOC-MARK-----BEG*INI-----DOC-MARK----------
+void DRSProducer::DoInitialise(){
+
+  shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
+  if (shmid == -1) {
+           perror("Shared memory");
+  }
+  EUDAQ_WARN("producer constructor: shmid = "+std::to_string(shmid));
+
+  // Attach to the segment to get a pointer to it.
+  shmp = (shmseg*)shmat(shmid, NULL, 0);
+  if (shmp == (void *) -1) {
+           perror("Shared memory attach");
+  }
+
+
+  auto ini = GetInitConfiguration();
+  std::string lock_path = ini->Get("DRS_DEV_LOCK_PATH", "drslockfile.txt");
+  m_file_lock = fopen(lock_path.c_str(), "a");
+#ifndef _WIN32
+  if(flock(fileno(m_file_lock), LOCK_EX|LOCK_NB)){ //fail
+    EUDAQ_THROW("unable to lock the lockfile: "+lock_path );
+  }
+#endif
+
+  char *s, *sep, ss[6][16];
+
+  std::string DRS_BASE_ADDRESS = ini->Get("DRS_BASE_ADDRESS", "3210");
+  // split DRS_BASE_ADDRESS into strings separated by ':'
+  NBoardsDRS = 0;
+  s = &DRS_BASE_ADDRESS[0];
+  while(s < DRS_BASE_ADDRESS.c_str()+strlen(DRS_BASE_ADDRESS.c_str())) {
+          sep = strchr(s, ':');
+          if (sep == NULL) break;
+          strncpy(ss[NBoardsDRS], s, sep-s);
+          ss[NBoardsDRS][sep-s] = 0;
+          s += sep-s+1;
+          NBoardsDRS++;
+          if (NBoardsDRS == 16) break;
+        }
+        strcpy(ss[NBoardsDRS++], s);
+  EUDAQ_INFO("DRS: found "+std::to_string(NBoardsDRS)+ " addresses in fers.ini"
+                );
+
+  char BA[100];
+
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+          std::sprintf(BA,"%s0000", ss[brd]);
+	  ret = CAEN_DGTZ_OpenDigitizer2(CAEN_DGTZ_USB_V4718, (void *)&V4718_PID, 0 , std::stoi(BA, 0, 16), &handle);
+	  if (ret) {
+		EUDAQ_THROW("Unable to open DRS at 0x"+std::string(ss[brd])+", ret = " + std::to_string(ret));
+	  }
+	  vhandle[brd]=handle;
+    	  ret = CAEN_DGTZ_GetInfo(handle, &BoardInfo);
+    	  if (ret) {
+	  	EUDAQ_THROW("DRS: CAEN_DGTZ_GetInfo failed on board"+std::string(ss[brd]));
+	  }else{
+	  	EUDAQ_INFO("DRS: opened at 0x"+std::string(ss[brd])+ "0000 is model "+BoardInfo.ModelName
+		+" SN "+std::to_string(BoardInfo.SerialNumber)
+		+" | PCB Revision "+std::to_string(BoardInfo.PCB_Revision)
+		+" | ROC FirmwareRel "+std::string(BoardInfo.ROC_FirmwareRel)
+		+" | AMX FirmwareRel "+std::string(BoardInfo.AMC_FirmwareRel)
+		);
+		PID_DRS[brd]=BoardInfo.SerialNumber;
+	  }
+	  m_conn_evque[brd].clear();
+	  shmp->EvCntCorrDRS[brd]=0;
+  }
+  shmp->isEvtCntCorrDRSReady = false;
+  shmp->isEvtCntCorrCommonDRSReady = false;
+  shmp->EvCntCorrCommonDRS=0;
+  shmp->connectedboardsDRS = NBoardsDRS;
+}
+
+//----------DOC-MARK-----BEG*CONF-----DOC-MARK----------
+void DRSProducer::DoConfigure(){
+  auto conf = GetConfiguration();
+  conf->Print(std::cout);
+  m_plane_id = conf->Get("DRS_PLANE_ID", 0);
+  m_ms_busy = std::chrono::milliseconds(conf->Get("DRS_DURATION_BUSY_MS", 100));
+  m_us_evt_length = std::chrono::microseconds(400); // used in sync.
+
+  m_flag_ts = conf->Get("DRS_ENABLE_TIMESTAMP", 0);
+  m_flag_tg = conf->Get("DRS_ENABLE_TRIGERNUMBER", 0);
+  if(!m_flag_ts && !m_flag_tg){
+    EUDAQ_WARN("Both Timestamp and TriggerNumber are disabled. Now, Timestamp is enabled by default");
+    m_flag_ts = false;
+    m_flag_tg = true;
+  }
+
+  FILE *f_ini;
+  std::string drs_conf_filename= conf->Get("DRS_CONF_FILE","NOFILE");
+  f_ini = fopen(drs_conf_filename.c_str(), "r");
+
+  ParseConfigFile(f_ini, &WDcfg);
+  fclose(f_ini);
+
+  /* *************************************************************************************** */
+  /* program the digitizer                                                                   */
+  /* *************************************************************************************** */
+  EUDAQ_INFO("DRS: # boards in Conf "+std::to_string(NBoardsDRS));
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+
+     ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = ProgramDigitizer(vhandle[brd], WDcfg, BoardInfo);
+
+     if (ret) {
+    	EUDAQ_THROW("DRS: ProgramDigitizer failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }
+  }
+
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     uint32_t status = 0;
+     ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_ReadRegister(vhandle[brd], 0x8104, &status);
+
+     if (ret) {
+    	EUDAQ_THROW("DRS: ProgramDigitizer-read failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }
+
+  }
+  //read twice (first read clears the previous status)
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     uint32_t status = 0;
+     ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_ReadRegister(vhandle[brd], 0x8104, &status);
+
+     if (ret) {
+    	EUDAQ_THROW("DRS: ProgramDigitizer-read failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }
+
+  }
+  // Allocate memory for the event data and readout buffer
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_AllocateEvent(vhandle[brd], (void**)&Event742);
+     if (ret) {
+    	EUDAQ_THROW("DRS: Allocate memory for the event data failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }
+     ret = CAEN_DGTZ_MallocReadoutBuffer(handle, &buffer,&AllocatedSize); /* WARNING: This malloc must be done after the digitizer programming */
+     if (ret) {
+    	EUDAQ_THROW("DRS: Allocate memory for the readout buffer failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }else{
+  	EUDAQ_INFO("DRS: ProgramDigitizer successful on board SN "+std::to_string(BoardInfo.SerialNumber));
+  	EUDAQ_INFO("DRS: Allocate memory for the readout buffer "+std::to_string(AllocatedSize));
+     }
+  }
+
+
+}
+//----------DOC-MARK-----BEG*RUN-----DOC-MARK----------
+void DRSProducer::DoStartRun(){
+  m_exit_of_run = false;
+  // here the hardware is told to startup data acquisition
+  ret = CAEN_DGTZ_SetExtTriggerInputMode(vhandle[0], CAEN_DGTZ_TRGMODE_DISABLED);
+  Sleep(5);
+  std::chrono::time_point<std::chrono::high_resolution_clock> tp_start_aq = std::chrono::high_resolution_clock::now();
+  shmp->DRS_Aqu_start_time_us=tp_start_aq;
+  //auto tp_start_aq_duration = std::chrono::duration_cast<std::chrono::microseconds>(shmp->DRS_Aqu_start_time_us.time_since_epoch());
+  //std::cout<<"---6666---  time[us] = " << tp_start_aq_duration.count() <<std::endl;
+
+  shmp->DRS_offset_us = 0;
+
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     m_conn_evque[brd].clear();
+     ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_SWStartAcquisition(vhandle[brd]);
+
+     //auto return_sq = std::chrono::steady_clock::now();
+     //auto time_difference = std::chrono::duration_cast<std::chrono::microseconds>(return_sq - tp_start_aq);
+     //std::cout<<"---6666---  time[us] = " << time_difference.count() <<" on board "<<brd<<std::endl;
+
+     if (ret) {
+    	EUDAQ_THROW("DRS: StartAcquisition failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }else{
+  	EUDAQ_INFO("DRS: StartAcquisition successful on board SN "+std::to_string(BoardInfo.SerialNumber));
+     }
+  }
+
+  Sleep(5);
+  ret = CAEN_DGTZ_SetExtTriggerInputMode(vhandle[0], CAEN_DGTZ_TRGMODE_ACQ_AND_EXTOUT);
+
+
+//CAEN_DGTZ_TRGMODE_DISABLED
+//CAEN_DGTZ_TRGMODE_ACQ_ONLY
+//CAEN_DGTZ_TRGMODE_ACQ_AND_EXTOUT
+
+
+}
+//----------DOC-MARK-----BEG*STOP-----DOC-MARK----------
+void DRSProducer::DoStopRun(){
+  m_exit_of_run = true;
+  // here the hardware is told to stop data acquisition
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_SWStopAcquisition(vhandle[brd]);
+     if (ret) {
+    	EUDAQ_THROW("DRS: StopAcquisition failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }else{
+  	EUDAQ_INFO("DRS: StopAcquisition successful on board SN "+std::to_string(BoardInfo.SerialNumber));
+     }
+
+     m_conn_evque[brd].clear();
+  }
+  shmp->DRS_offset_us = 0;
+
+}
+//----------DOC-MARK-----BEG*RST-----DOC-MARK----------
+void DRSProducer::DoReset(){
+  m_exit_of_run = true;
+  if(m_file_lock){
+#ifndef _WIN32
+    flock(fileno(m_file_lock), LOCK_UN);
+#endif
+    fclose(m_file_lock);
+    m_file_lock = 0;
+  }
+  m_ms_busy = std::chrono::milliseconds();
+  m_exit_of_run = false;
+
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     //ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_Reset(vhandle[brd]);
+
+     if (ret) {
+    	EUDAQ_THROW("DRS: Reset failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }else{
+  	EUDAQ_INFO("DRS: Reset on board SN "+std::to_string(BoardInfo.SerialNumber));
+     }
+  }
+
+}
+//----------DOC-MARK-----BEG*TER-----DOC-MARK----------
+void DRSProducer::DoTerminate(){
+  m_exit_of_run = true;
+  if(m_file_lock){
+    fclose(m_file_lock);
+    m_file_lock = 0;
+  }
+  for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+     //ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
+     ret = CAEN_DGTZ_Reset(vhandle[brd]);
+
+     if (ret) {
+    	EUDAQ_THROW("DRS: Reset failed on board"+std::to_string(BoardInfo.SerialNumber));
+     }else{
+  	EUDAQ_INFO("DRS: Reset on board SN "+std::to_string(BoardInfo.SerialNumber));
+     }
+  }
+}
+//----------DOC-MARK-----BEG*LOOP-----DOC-MARK----------
+void DRSProducer::RunLoop(){
+  auto tp_start_run = std::chrono::steady_clock::now();
+  uint32_t trigger_n = 0;
+  uint8_t x_pixel = 16;
+  uint8_t y_pixel = 16;
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint32_t> position(0, x_pixel*y_pixel-1);
+  std::uniform_int_distribution<uint32_t> signal(0, 255);
+
+
+  while(!m_exit_of_run){
+    auto tp_trigger = std::chrono::steady_clock::now();
+    auto tp_end_of_busy = tp_trigger + m_ms_busy;
+
+    //std::cout<<"---6666---  " << shmp->FERS_offset_us<<" , "<<shmp->DRS_offset_us<<std::endl;
+
+    if(shmp->FERS_offset_us==0 && shmp->DRS_offset_us==0 ) {
+    	auto drs_fers_diff = std::chrono::duration_cast<std::chrono::microseconds> (shmp->FERS_Aqu_start_time_us - shmp->DRS_Aqu_start_time_us );
+
+	if(abs(drs_fers_diff.count())<60000000){ // 60s
+	 	EUDAQ_WARN("Global time difference (FERS - DRS) "
+			+std::to_string(drs_fers_diff.count()/1000.)+" ms");
+
+
+	//std::cout<<"---6666---  FERS - DRS diff :" << drs_fers_diff.count()<<std::endl;
+    		if(drs_fers_diff.count()<0){ // DRS started before FERS
+	        	shmp->FERS_offset_us = 0;
+		        shmp->DRS_offset_us = -drs_fers_diff.count();
+		}else{
+	        	shmp->FERS_offset_us = drs_fers_diff.count();
+		        shmp->DRS_offset_us = 0;
+    		}
+
+	}
+    }
+
+
+
+    //for( int brd = 0 ; brd<ns;brd++) {
+    //    CAEN_DGTZ_SendSWtrigger(vhandle[brd]);
+    //}
+    // real data
+    //EUDAQ_INFO("DRS: Read data ------------------------ ");
+
+    for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+       ret = CAEN_DGTZ_ReadData(vhandle[brd], CAEN_DGTZ_SLAVE_TERMINATED_READOUT_MBLT, buffer, &BufferSize);
+       if (ret) {
+      	EUDAQ_THROW("DRS: ReadData failed ret ="+ std::to_string(ret));
+       }
+       ret = CAEN_DGTZ_GetNumEvents(vhandle[brd], buffer, BufferSize, &NumEvents);
+       if (ret) {
+      	EUDAQ_THROW("DRS: CAEN_DGTZ_GetNumEvents failed");
+       //}else{
+       //	  EUDAQ_INFO("DRS: ReadData buffer size "+std::to_string(BufferSize)+" on board "+std::to_string(brd)
+	//	+" NumEvents= "+std::to_string(NumEvents)
+       //   );
+       }
+       //ret = CAEN_DGTZ_GetEventInfo(handle, buffer, BufferSize, i, &EventInfo, &EventPtr);
+       for(int i = 0; i < (int)NumEvents; i++) {
+          ret = CAEN_DGTZ_GetEventInfo(vhandle[brd], buffer, BufferSize, i, &EventInfo, &EventPtr);
+          if (ret) {
+	        EUDAQ_THROW("DRS: CAEN_DGTZ_GetEventInfo failed");
+	  }
+          ret = CAEN_DGTZ_DecodeEvent(vhandle[brd], EventPtr, (void**)&Event742);
+          if (ret) {
+	        EUDAQ_THROW("DRS: CAEN_DGTZ_DecodeEvent failed");
+          //}else{
+		//EUDAQ_INFO("DRS: EventInfo on Board " + std::to_string(*(Event742->DataGroup[0].ChSize)));
+	//	EUDAQ_INFO("DRS: Group=0, ch=0, TS=5, ADC= " + std::to_string(Event742->DataGroup[0].DataChannel[0][5]));
+	  }
+          Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter;
+	  m_conn_evque[brd].push_back(*Event742);
+          EUDAQ_INFO("Plot "+std::to_string(brd)
+                +" , "+std::to_string(EventInfo.EventCounter)
+                +" , "+std::to_string(Event742->DataGroup[0].TriggerTimeTag/58.594/1000./2.+ 12. * (brd))
+                +" , " + std::to_string(Event742->DataGroup[0].DataChannel[0][1])
+          );
+
+          //EUDAQ_INFO("DRS: EvInfo Board "+std::to_string(brd)
+          //      +" EvC "+std::to_string(EventInfo.EventCounter)
+          //      +" TrigT0 "+std::to_string(Event742->DataGroup[0].TriggerTimeTag)
+          //      +"DRS: Group=0, ch=0, TS=1, ADC= " + std::to_string(Event742->DataGroup[0].DataChannel[0][1])
+          //);
+       }
+
+    }
+
+
+
+    uint32_t block_id = m_plane_id;
+
+    int Nevt = 128;
+
+    for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+		int qsize = m_conn_evque[brd].size();
+          	//EUDAQ_INFO("Sorting: cheking size " + std::to_string(brd)
+		//	+"  "+std::to_string(qsize) );
+	       if( qsize < Nevt) Nevt = qsize;
+    }
+    //std::cout<<"---6666--- Nevt "<<Nevt <<std::endl;
+
+
+    if(!shmp->isEvtCntCorrDRSReady && Nevt) {
+	DRSProducer::make_evtCnt_corr(&m_conn_evque);
+    	for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+                EUDAQ_WARN("DRS: board "+std::to_string(brd)
+                +" Local EvCntCorr "+std::to_string(shmp->EvCntCorrDRS[brd]));
+    	}
+    }
+
+
+    // Remove unmatched pre-triggers
+    if(shmp->isEvtCntCorrDRSReady&&Nevt>0&&trigger_n<100) {
+             for(auto &conn_evque: m_conn_evque){
+                     int trigger_n_ev = conn_evque.second.front().DataGroup[1].TriggerTimeTag + shmp->EvCntCorrDRS[conn_evque.first]; 
+                     if(trigger_n_ev<0) { // this is triggered before the start of the last DRS board 
+                              conn_evque.second.pop_front();  // drop it
+                              Nevt = 0;  // Do not send data yet
+                     }
+             }
+
+    }
+
+    // Ready to transmit the queued events with calculate Evt# offset
+    for(int ievt = 0; ievt<Nevt; ievt++) {
+    	    auto ev = eudaq::Event::MakeUnique("DRSProducer");
+    	    ev->SetTag("Plane ID", std::to_string(m_plane_id));
+
+
+	    //if(m_flag_ts){
+	    //  std::chrono::nanoseconds du_ts_beg_ns(tp_trigger - tp_start_run);
+	    //  std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
+	    //  ev->SetTimestamp(du_ts_beg_ns.count(), du_ts_end_ns.count());
+	    //}
+
+            trigger_n=-1;
+	    for(auto &conn_evque: m_conn_evque){
+	        int trigger_n_ev = conn_evque.second.front().DataGroup[1].TriggerTimeTag + shmp->EvCntCorrDRS[conn_evque.first];  // DRS Ev counter is stored instead
+
+        	if(trigger_n_ev< trigger_n||trigger_n<0)
+	          trigger_n = trigger_n_ev;
+	    }
+	    if(m_flag_tg)
+      		ev->SetTriggerN(trigger_n);
+
+            //std::cout<<"---6666---  trigger_id = " << trigger_n <<std::endl;
+
+            m_conn_ev.clear(); // Just in case ...
+
+	    for(auto &conn_evque: m_conn_evque){
+	    	auto &ev_front = conn_evque.second.front();
+		int ibrd = conn_evque.first;
+ 		if(ev_front.DataGroup[1].TriggerTimeTag == trigger_n){
+      			m_conn_ev[ibrd]=ev_front;
+			conn_evque.second.pop_front();
+	    	}
+	    }
+
+
+	    if(m_conn_ev.size()!=NBoardsDRS) {
+		EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
+			+" board's records instead of "+std::to_string(NBoardsDRS) );
+	    }else{
+
+	    	for( int brd = 0 ; brd<NBoardsDRS;brd++) {
+
+                     if( m_flag_ts && brd==0 ){
+                          auto du_ts_beg_us = std::chrono::duration_cast<std::chrono::microseconds>(shmp->DRS_Aqu_start_time_us - get_midnight_today());
+                          auto tp_trigger0 = std::chrono::microseconds(static_cast<long int>(m_conn_ev[brd].DataGroup[0].TriggerTimeTag/58.594/1000./2.));
+                          du_ts_beg_us += tp_trigger0;
+                          //std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
+                          std::chrono::microseconds du_ts_end_us(du_ts_beg_us + m_us_evt_length);
+                          ev->SetTimestamp(du_ts_beg_us.count(), du_ts_end_us.count());
+                          //std::cout<<"---6666--- du_ts_beg_us "<<du_ts_beg_us.count()<<" du_ts_end_us "<<du_ts_end_us.count()<<std::endl;
+                     }
+
+		     std::vector<uint8_t> data;
+	    	     //ev->SetTriggerN(trigger_n);
+		     make_header(brd, PID_DRS[brd], &data);
+		     // Add data here
+
+	    	     ev->AddBlock(m_plane_id+brd, data);
+		}
+          	//EUDAQ_INFO("Sending Ev");
+
+
+	    	SendEvent(std::move(ev));
+                m_conn_ev.clear();
+	    }
+
+
+    }
+
+
+    std::this_thread::sleep_until(tp_end_of_busy);
+
+  }
+}
+//----------DOC-MARK-----END*IMP-----DOC-MARK----------
+
+
+
+void DRSProducer::make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>>* m_conn_evque) {
+    if (m_conn_evque == nullptr) {
+        // Handle null pointer
+        return;
+    }else{
+
+	auto it = m_conn_evque->find(0);
+    	std::deque<CAEN_DGTZ_X742_EVENT_t>& eventDeque = it->second;
+
+	std::vector<double> EvT;
+	EvT.reserve(eventDeque.size()); // Reserve memory for efficiency
+	for (const auto& event : eventDeque) {
+    		EvT.push_back(static_cast<double>(event.DataGroup[0].TriggerTimeTag));
+	}
+
+        for(int brd = 0; brd<NBoardsDRS;brd++){
+                int matching_index = -1;
+
+		auto it = m_conn_evque->find(brd);
+	    	std::deque<CAEN_DGTZ_X742_EVENT_t>& eventDeque = it->second;
+ 	        std::vector<double> TrigTime;
+		TrigTime.reserve(eventDeque.size());
+	        for (const auto& event : eventDeque) {
+	                TrigTime.push_back(static_cast<double>(event.DataGroup[0].TriggerTimeTag));
+       		}
+
+		if(TrigTime.size()<1)return;
+
+
+                for (size_t idx = 0; idx < EvT.size(); idx++) {
+                        double value = EvT[idx]/58.594/1000./2.;   // in millisecond
+                        for (double df_value : TrigTime) {
+                                double tmp_value = df_value/58.594/1000./2.+ 12. * (brd); // in millisecond
+                                if (std::abs(value - tmp_value) <= 0.333) {// in millisecond
+                                        matching_index = idx;
+                                        break;
+                                }
+                        }
+                        if (matching_index != -1) {
+                                shmp->EvCntCorrDRS[brd]=matching_index;
+                                break;
+                        }
+                }
+		if (matching_index<0)
+			EUDAQ_THROW("Unable to sync DRS modles due to excessive time jitter - restard the DAQ! ");
+        }
+
+	int max_value = *std::max_element(shmp->EvCntCorrDRS, shmp->EvCntCorrDRS + NBoardsDRS);
+	for(int brd = 0; brd<NBoardsDRS;brd++)
+		 shmp->EvCntCorrDRS[brd]-=max_value;
+
+        shmp->isEvtCntCorrDRSReady = true;
+    }
+    return;
+}
+

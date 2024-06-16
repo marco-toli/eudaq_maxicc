@@ -16,6 +16,7 @@
 
 #ifndef _MULTIPLATFORM_H
 #define _MULTIPLATFORM_H
+#define linux
 
 #include <stdint.h>
 #include <ctype.h>    /* toupper() */   /*isspace()*/

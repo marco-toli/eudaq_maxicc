@@ -55,6 +55,8 @@ public:
 private:
   uint32_t m_noprint;
   std::mutex m_mtx_map;
+  std::map<eudaq::ConnectionSPC, std::deque<eudaq::EventSPC>> m_conn_evque;
+  std::set<eudaq::ConnectionSPC> m_conn_inactive;
 
   void AddEvent_TimeStamp(uint32_t id, eudaq::EventSPC ev);
   void AddEvent_TriggerN(uint32_t id, eudaq::EventSPC ev);
@@ -75,6 +77,9 @@ private:
   std::map<uint32_t, std::deque<eudaq::EventSPC>> m_que_event_tg;
   std::set<uint32_t> m_event_ready_tg;
   uint32_t m_tg_curr_n;
+
+ 
+
 };
 
 namespace{
@@ -90,26 +95,26 @@ FERSDataCollector::FERSDataCollector(const std::string &name,
 }
 
 void FERSDataCollector::DoConnect(eudaq::ConnectionSPC idx){
-  // std::unique_lock<std::mutex> lk(m_mtx_map);
-  // m_conn_evque[idx].clear();
-  // m_conn_inactive.erase(idx);
-  uint32_t id = eudaq::str2hash(idx->GetName());
-  std::unique_lock<std::mutex> lk(m_mtx_map);
-  m_con_id.insert(id);
+   std::unique_lock<std::mutex> lk(m_mtx_map);
+   m_conn_evque[idx].clear();
+   m_conn_inactive.erase(idx);
+  //uint32_t id = eudaq::str2hash(idx->GetName());
+  //std::unique_lock<std::mutex> lk(m_mtx_map);
+  //m_con_id.insert(id);
 
-  std::cout<<"connecting m_con_id.size() "<< m_con_id.size()<<std::endl;
+  //std::cout<<"connecting m_con_id.size() "<< m_con_id.size()<<std::endl;
 }
 
 void FERSDataCollector::DoDisconnect(eudaq::ConnectionSPC idx){
-  // std::unique_lock<std::mutex> lk(m_mtx_map);
-  // m_conn_inactive.insert(idx);
-  // if(m_conn_inactive.size() == m_conn_evque.size()){
-  //   m_conn_inactive.clear();
-  //   m_conn_evque.clear();
-  // }
-  uint32_t id = eudaq::str2hash(idx->GetName());
-  std::unique_lock<std::mutex> lk(m_mtx_map);
-  m_con_id.erase(id);
+   std::unique_lock<std::mutex> lk(m_mtx_map);
+   m_conn_inactive.insert(idx);
+   if(m_conn_inactive.size() == m_conn_evque.size()){
+     m_conn_inactive.clear();
+     m_conn_evque.clear();
+   }
+  //uint32_t id = eudaq::str2hash(idx->GetName());
+  //std::unique_lock<std::mutex> lk(m_mtx_map);
+  //m_con_id.erase(id);
 }
 
 void FERSDataCollector::DoConfigure(){
@@ -118,15 +123,15 @@ void FERSDataCollector::DoConfigure(){
   if(conf){
     conf->Print();
     m_noprint = conf->Get("FERS_DISABLE_PRINT", 0);
-    m_pri_ts = conf->Get("PRIOR_TIMESTAMP", m_pri_ts?1:0);
+    //m_pri_ts = conf->Get("PRIOR_TIMESTAMP", m_pri_ts?1:0);
   }
 }
 
 void FERSDataCollector::DoReset(){
-  // std::unique_lock<std::mutex> lk(m_mtx_map);
+  std::unique_lock<std::mutex> lk(m_mtx_map);
   m_noprint = 0;
-  // m_conn_evque.clear();
-  // m_conn_inactive.clear();
+  m_conn_evque.clear();
+  m_conn_inactive.clear();
 }
 
 void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp){
@@ -136,59 +141,65 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
      EUDAQ_THROW("!evsp->IsFlagTrigger()");
    }
 
-  if(evsp->IsFlagTimestamp()){
-    AddEvent_TimeStamp(id, evsp);    
+
+
+
+  //if(evsp->IsFlagTimestamp()){
+  //  AddEvent_TimeStamp(id, evsp);
+  //}
+  //if(evsp->IsFlagTrigger()){
+  //  AddEvent_TriggerN(id, evsp);
+  //}
+
+  //BuildEvent_TimeStamp();
+
+  //BuildEvent_Trigger();
+
+  //BuildEvent_Final();
+
+   m_conn_evque[idx].push_back(evsp);
+
+   //uint32_t RunN = evsp->GetRunN();
+   uint32_t trigger_n = -1;
+   for(auto &conn_evque: m_conn_evque){
+     if(conn_evque.second.empty())
+       return;
+     else{
+       uint32_t trigger_n_ev = conn_evque.second.front()->GetTriggerN();
+       if(trigger_n_ev< trigger_n)
+   	trigger_n = trigger_n_ev;
+     }
+   }
+
+  auto ev_sync = eudaq::Event::MakeUnique("FERS & DRS");
+  ev_sync->SetFlagPacket();
+  ev_sync->SetTriggerN(trigger_n);
+  for(auto &conn_evque: m_conn_evque){
+    auto &ev_front = conn_evque.second.front();
+    if(ev_front->GetTriggerN() == trigger_n){
+      ev_sync->AddSubEvent(ev_front);
+      conn_evque.second.pop_front();
+    }
   }
-  if(evsp->IsFlagTrigger()){
-    AddEvent_TriggerN(id, evsp);
-  }
 
-  BuildEvent_TimeStamp();
-  
-  BuildEvent_Trigger();
 
-  BuildEvent_Final();
-
-   //m_conn_evque[idx].push_back(evsp);
-
-   //uint32_t trigger_n = -1;
-   //for(auto &conn_evque: m_conn_evque){
-   //  if(conn_evque.second.empty())
-   //    return;
-   //  else{
-   //    uint32_t trigger_n_ev = conn_evque.second.front()->GetTriggerN();
-   //    if(trigger_n_ev< trigger_n)
-   //	trigger_n = trigger_n_ev;
-   //  }
-   //}
-
-   //auto evsp = eudaq::Event::MakeUnique("Ex0Tg");
-   //evsp->SetFlagPacket();
-   //evsp->SetTriggerN(trigger_n);
-   //for(auto &conn_evque: m_conn_evque){
-   //  auto &ev_front = conn_evque.second.front(); 
-   //  if(ev_front->GetTriggerN() == trigger_n){
-   //    evsp->AddSubEvent(ev_front);
-   //    conn_evque.second.pop_front();
-   //  }
-   //}
-  
-   //if(!m_conn_inactive.empty()){
-   //  std::set<eudaq::ConnectionSPC> conn_inactive_empty;
-   //  for(auto &conn: m_conn_inactive){
-   //    if(m_conn_evque.find(conn) != m_conn_evque.end() && 
-   //	 m_conn_evque[conn].empty()){
-   //	m_conn_evque.erase(conn);
-   //	conn_inactive_empty.insert(conn);	
-   //    }
-   //  }
-   //  for(auto &conn: conn_inactive_empty){
-   //    m_conn_inactive.erase(conn);
-   //  }
-   //}
+   if(!m_conn_inactive.empty()){
+     std::set<eudaq::ConnectionSPC> conn_inactive_empty;
+     for(auto &conn: m_conn_inactive){
+       if(m_conn_evque.find(conn) != m_conn_evque.end() &&
+   	 m_conn_evque[conn].empty()){
+   	m_conn_evque.erase(conn);
+   	conn_inactive_empty.insert(conn);
+       }
+     }
+     for(auto &conn: conn_inactive_empty){
+       m_conn_inactive.erase(conn);
+     }
+   }
+   //ev_sync->SetRunN(RunN);
    if(!m_noprint)
-     evsp->Print(std::cout);
-   WriteEvent(std::move(evsp));
+     ev_sync->Print(std::cout);
+   WriteEvent(std::move(ev_sync));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

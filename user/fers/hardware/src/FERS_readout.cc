@@ -20,6 +20,7 @@
 #include <math.h>
 #include <time.h>
 #include <sys/timeb.h>
+//#include <iostream>  // Ensure this include is present at the top of your file
 
 #include "FERS_LL.h"
 #include "FERSlib.h"
@@ -752,8 +753,14 @@ int FERS_DecodeEvent(int handle, uint32_t *EvBuff, int nb, int *DataQualifier, d
 				}
 				// negative numbers (due to pedestal subtraction) are forced to 0 
 				// number exceeding max_range (due to pedestal subtraction) are forced to  max_range
-				SpectEvent[h].energyLG[ch] = std::fmin<int>(std::fmax<int>(0, lenergy), MaxEnergyRange);
-				SpectEvent[h].energyHG[ch] = std::fmin<int>(std::fmax<int>(0, henergy), MaxEnergyRange);
+				SpectEvent[h].energyLG[ch] = static_cast<uint16_t>(std::min(static_cast<int>(std::max(0, static_cast<int>(lenergy))), static_cast<int>(MaxEnergyRange)));
+				SpectEvent[h].energyHG[ch] = static_cast<uint16_t>(std::min(static_cast<int>(std::max(0, static_cast<int>(henergy))), static_cast<int>(MaxEnergyRange)));
+				//SpectEvent[h].energyLG[ch] = std::min(std::max(0, lenergy, MaxEnergyRange);
+ 				//SpectEvent[h].energyHG[ch] = std::min(std::max(0, henergy, MaxEnergyRange);
+				//std::cout<<" ---1111--- "
+				//<<" lenergy = "<<lenergy<<" henergy "<<henergy<< " MaxEnergyRange " << MaxEnergyRange
+				//<<std::endl;
+
 			}
 		}
 		if ((*DataQualifier & DTQ_TIMING) && (pnt < size)) {

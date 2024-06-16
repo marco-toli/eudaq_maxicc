@@ -40,6 +40,13 @@ if(USER_FERS_BUILD)
     src/console.cc
     src/MultiPlatform.cc
     src/FERSlib.cc
+    src/WDconfig.cc
+    src/WaveDump.cc
+    src/flash.cc
+    src/WDplot.c
+    src/spi.cc
+    src/fft.cc
+    src/X742CorrectionRoutines.cc
     src/paramparser.cc
     src/configure.cc)
 endif()
@@ -48,3 +55,4 @@ install(TARGETS ${USER_HARDWARE_LIBRARY}
   RUNTIME DESTINATION bin
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib)
+
