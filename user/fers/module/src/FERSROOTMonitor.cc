@@ -37,9 +37,9 @@ private:
   TH1D* m_FERS_LG_Ch_ADC[16];
   TH1D* m_FERS_HG_Ch_ADC[16];
   TH1D* m_DRS_Ch_TS0_ADC[8];
+  TProfile* m_DRS_Pulse_Ch0[8];
   //TH1D* m_my_hist;
   //TGraph2D* m_my_graph;
-  //TProfile* m_my_prof;
 
   int brd;
   int PID; 
@@ -80,17 +80,18 @@ void FERSROOTMonitor::AtConfiguration(){
 	m_FERS_HG_Ch_ADC[i] =  m_monitor->Book<TH1D>(hname,"HG_ADC_allCh" ,
 		"h_HG_ADC_ch", "HG ADC per channel in all channels;ADC;# evt", 4096, 0., 4096.);
   }
-  for(int i=0;i<shmp->connectedboards;i++) {
+  for(int i=0;i<shmp->connectedboardsDRS;i++) {
         char hname[256];
-	sprintf (hname,"DRS/Board_%d/LG_ADC_allCh",i);
-        m_DRS_Ch_TS0_ADC[i] =  m_monitor->Book<TH1D>(hname,"Ch_TS0_ADC" ,
+	sprintf (hname,"DRS/Board_%d/Ch0_TS0_ADC",i);
+        m_DRS_Ch_TS0_ADC[i] =  m_monitor->Book<TH1D>(hname,"Ch0_TS0_ADC" ,
                 "h_Ch_TS0_ADC", "ADC in TS0;ADC;# of evt", 4096, 0., 4096.);
+	sprintf (hname,"DRS/Board_%d/Pulse_Ch0",i);
+  	m_DRS_Pulse_Ch0[i] = m_monitor->Book<TProfile>(hname, "DRS_Pulse_Ch0",
+    		"p_DRS_Pulse_Ch0", "Average Pulse Ch0;x-axis title;y-axis title", 1024, 0., 1024.);
   }
   //m_my_graph = m_monitor->Book<TGraph2D>("Channel 0/my_graph", "Example graph");
   //m_my_graph->SetTitle("A graph;x-axis title;y-axis title;z-axis title");
   //m_monitor->SetDrawOptions(m_my_graph, "colz");
-  //m_my_prof = m_monitor->Book<TProfile>("Channel 0/my_profile", "Example profile",
-  //  "p_example", "A profile histogram;x-axis title;y-axis title", 100, 0., 1.);
 }
 
 void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
@@ -130,7 +131,7 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 
 			}
 
-		}else if(ev_sub->GetDescription()=="FERSProducer"){  //Decode DRS
+		}else if(ev_sub->GetDescription()=="DRSProducer"){  //Decode DRS
 
 			auto block_n_list = ev_sub->GetBlockNumList();
 			for(auto &block_n: block_n_list){
@@ -143,8 +144,15 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 				//std::cout<<"---7777--- brd = "<<brd<<std::endl;
 				//std::cout<<"---7777--- PID = "<<PID<<std::endl;
 
-  				CAEN_DGTZ_X742_EVENT_t  Event = DRSunpack_event (&data);
-				m_DRS_Ch_TS0_ADC[brd]->Fill(Event.DataGroup[0].DataChannel[0][0]);
+				if(data.size()>0) {
+  					CAEN_DGTZ_X742_EVENT_t  Event = DRSunpack_event (&data);
+					//std::cout<<"---7777--- DRS unpacked "<<std::endl;
+					m_DRS_Ch_TS0_ADC[brd]->Fill(Event.DataGroup[0].DataChannel[0][0]);
+					//std::cout<<"---7777--- Event.DataGroup[0].ChSize[0] "<<Event.DataGroup[0].ChSize[0]<<std::endl;
+					for(int its=0;its<Event.DataGroup[0].ChSize[0];its++){
+						m_DRS_Pulse_Ch0[brd]->Fill(Float_t(its+0.5),Event.DataGroup[0].DataChannel[0][its]);
+					}
+				}
 			}
 
 		}else { // Decode Beam elements (to be included later)

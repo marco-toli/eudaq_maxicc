@@ -25,7 +25,7 @@ private:
   uint64_t m_ts_curr_beg;
   uint64_t m_ts_curr_end;
 
-  static const uint64_t TOLERANCE_US = 200;  // 200 microseconds tolerance
+  static const uint64_t TOLERANCE_US = 2000;  // microseconds tolerance
 };
 //----------DOC-MARK-----END*DEC-----DOC-MARK----------
 
@@ -63,6 +63,7 @@ void FERStsDataCollector::DoDisconnect(eudaq::ConnectionSPC idx){
 }
 
 void FERStsDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp){
+  //evsp->Print(std::cout);
   if(!evsp->IsFlagTimestamp()){
     EUDAQ_THROW("!evsp->IsFlagTimestamp()");
   }
@@ -75,9 +76,12 @@ void FERStsDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evs
   
   uint64_t ts_ev_beg =  evsp->GetTimestampBegin();
   uint64_t ts_ev_end =  evsp->GetTimestampEnd();
+  //EUDAQ_INFO("ts_ev_beg ="+std::to_string(ts_ev_beg));
+  //EUDAQ_INFO("m_ts_last_end ="+std::to_string(m_ts_last_end));
   
   if(ts_ev_beg < m_ts_last_end){
     EUDAQ_THROW("ts_ev_beg < m_ts_last_end");
+    //EUDAQ_INFO("ts_ev_beg < m_ts_last_end");
   }
   
   m_event_ready_ts.insert(idx);
@@ -166,6 +170,16 @@ void FERStsDataCollector::BuildEvent(){
     m_ts_last_end = m_ts_curr_end;
     m_ts_curr_beg = ts_next_beg;
     m_ts_curr_end = ts_next_end;
-    WriteEvent(std::move(ev_sync));
+    //ev_sync->Print(std::cout);
+    uint32_t n = ev_sync->GetNumSubEvent();
+    int64_t btime[2] = {0};
+	for(uint32_t i = 0; i< n; i++){
+	        auto ev_sub = ev_sync->GetSubEvent(i);
+		btime[i] = static_cast<int64_t>(ev_sub->GetTimestampBegin());
+	}
+    if (n>1) {
+	    //std::cout<<" ----7777---- diff time = "<<btime[0]-btime[1]<<std::endl;
+	    WriteEvent(std::move(ev_sync));
+    }
   }
 }

@@ -25,7 +25,7 @@
 
 
 #define SHM_KEY 0x12345
-#define MAXCHAR 28 // max size of chars in following struct. DON'T MAKE IT TOO BIG!!!
+#define MAXCHAR 27 // max size of chars in following struct. DON'T MAKE IT TOO BIG!!!
 struct shmseg {
         // FERS
         int connectedboards = 0; // number of connected FERS boards
@@ -42,21 +42,19 @@ struct shmseg {
         char collector[MAX_NBRD][MAXCHAR]; // title of data collector
         // from methods:
         int EvCntCorrFERS[MAX_NBRD] = {-1}; // DRS correction for event Cnt missmatch
-        int EvCntCorrCommonFERS= 0; // DRS correction for event Cnt missmatch
         std::chrono::high_resolution_clock::time_point FERS_Aqu_start_time_us ;
 	int FERS_offset_us = 0;
 
         // DRS
         int connectedboardsDRS = 0; // number of connected DRS boards
         int EvCntCorrDRS[MAX_NBRD]= {-1} ; // DRS correction for event Cnt missmatch
-        int EvCntCorrCommonDRS= 0; // DRS correction for event Cnt missmatch
         std::chrono::high_resolution_clock::time_point DRS_Aqu_start_time_us ;
 	int DRS_offset_us = 0;
+	int DRS_trigC = 0;
+	uint32_t DRS_trigT_last = 0;
 
         bool isEvtCntCorrFERSReady ;
-        bool isEvtCntCorrCommonFERSReady ;
         bool isEvtCntCorrDRSReady ;
-        bool isEvtCntCorrCommonDRSReady ;
 };
 
 std::chrono::time_point<std::chrono::high_resolution_clock> get_midnight_today();

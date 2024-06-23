@@ -38,11 +38,12 @@ void DRSpack_event(void* Event, std::vector<uint8_t> *vec)
 	}
 	for(int ich =0 ; ich <MAX_X742_CHANNEL_SIZE; ich++) {
 		for(int its =0 ; its <Event_gr->ChSize[ich]; its++) {
-			FERSpack( 8*sizeof(float),             Event_gr->DataChannel[ich][its],     vec);
+			//std::cout<<"----9999--- Event_gr->DataChannel[ich][its] "<<its<<" "<<Event_gr->DataChannel[ich][its]<<std::endl;
+			FERSpack( 32,  static_cast<uint32_t>(Event_gr->DataChannel[ich][its]),     vec);
 		}
 	}
-	FERSpack( 32,             Event_gr->TriggerTimeTag,     vec);
-	FERSpack( 16,             Event_gr->StartIndexCell,     vec);
+	FERSpack( 32,             static_cast<uint32_t>(Event_gr->TriggerTimeTag),     vec);
+	FERSpack( 16,             static_cast<uint16_t>(Event_gr->StartIndexCell),     vec);
     }// end if group is present 
  }// end group loop
 
@@ -55,8 +56,8 @@ CAEN_DGTZ_X742_EVENT_t DRSunpack_event(std::vector<uint8_t> *vec)
   std::vector<uint8_t> data( vec->begin(), vec->end() );
   CAEN_DGTZ_X742_EVENT_t tmpEvent;
 
+
   int index = 0;
-  int sf = sizeof(float);
 
   for(int ig = 0; ig <MAX_X742_GROUP_SIZE; ig++) {
 	tmpEvent.GrPresent[ig] = data.at(index); index+=1;
@@ -68,31 +69,19 @@ CAEN_DGTZ_X742_EVENT_t DRSunpack_event(std::vector<uint8_t> *vec)
 			tmpEvent.DataGroup[ig].ChSize[ich] = FERSunpack32(index, data); index+=4;
 		}
 		for(int ich = 0; ich < MAX_X742_CHANNEL_SIZE; ich++){
+			tmpEvent.DataGroup[ig].DataChannel[ich] = (float *)malloc(sizeof(float) * tmpEvent.DataGroup[ig].ChSize[ich]);
 	                for(int its =0 ; its <tmpEvent.DataGroup[ig].ChSize[ich]; its++) {
-				switch(8*sf)
-				  {
-				    case 8:
-				      tmpEvent.DataGroup[ig].DataChannel[ich][its] = data.at(index); break;
-				    case 16:
-				      tmpEvent.DataGroup[ig].DataChannel[ich][its] = FERSunpack16(index, data); break;
-				    case 32:
-				      tmpEvent.DataGroup[ig].DataChannel[ich][its] = FERSunpack32(index, data); break;
-				    case 64:
-				      tmpEvent.DataGroup[ig].DataChannel[ich][its] = FERSunpack64(index, data);
-				  }
-				index += sf;
-
-
+				tmpEvent.DataGroup[ig].DataChannel[ich][its] = FERSunpack32(index, data);
+				index += 4;
 			}
 		}
 		tmpEvent.DataGroup[ig].TriggerTimeTag = FERSunpack32(index, data); index+=4;
-		tmpEvent.DataGroup[ig].StartIndexCell = FERSunpack32(index, data); index+=2;
+		tmpEvent.DataGroup[ig].StartIndexCell = FERSunpack16(index, data); index+=2;
 	}
   }
 
   return tmpEvent;
 }
-
 
 
 

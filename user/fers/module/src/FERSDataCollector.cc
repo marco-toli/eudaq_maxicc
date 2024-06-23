@@ -49,6 +49,7 @@ public:
   void DoConfigure() override;
   void DoReset() override;
   void DoReceive(eudaq::ConnectionSPC id, eudaq::EventSP ev) override;
+  int make_DRScnt_corr(std::map<eudaq::ConnectionSPC, std::deque<eudaq::EventSPC>>* m_conn_evque);
 
   static const uint32_t m_id_factory = eudaq::cstr2hash("FERSDataCollector");
 
@@ -57,6 +58,8 @@ private:
   std::mutex m_mtx_map;
   std::map<eudaq::ConnectionSPC, std::deque<eudaq::EventSPC>> m_conn_evque;
   std::set<eudaq::ConnectionSPC> m_conn_inactive;
+  std::map<int, eudaq::ConnectionSPC> m_conn_indx;
+  std::map<eudaq::ConnectionSPC, int> m_conn_corr;
 
   void AddEvent_TimeStamp(uint32_t id, eudaq::EventSPC ev);
   void AddEvent_TriggerN(uint32_t id, eudaq::EventSPC ev);
@@ -77,8 +80,9 @@ private:
   std::map<uint32_t, std::deque<eudaq::EventSPC>> m_que_event_tg;
   std::set<uint32_t> m_event_ready_tg;
   uint32_t m_tg_curr_n;
-
- 
+  
+  bool isCorrDRSdomainReady; 
+  int DRS_domainC = 0;
 
 };
 
@@ -125,6 +129,8 @@ void FERSDataCollector::DoConfigure(){
     m_noprint = conf->Get("FERS_DISABLE_PRINT", 0);
     //m_pri_ts = conf->Get("PRIOR_TIMESTAMP", m_pri_ts?1:0);
   }
+  DRS_domainC = 0;
+  isCorrDRSdomainReady = false;
 }
 
 void FERSDataCollector::DoReset(){
@@ -136,70 +142,89 @@ void FERSDataCollector::DoReset(){
 
 void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp){
    uint32_t id = eudaq::str2hash(idx->GetName()); 
+
    std::unique_lock<std::mutex> lk(m_mtx_map);
    if(!evsp->IsFlagTrigger()){
      EUDAQ_THROW("!evsp->IsFlagTrigger()");
    }
 
-
-
-
-  //if(evsp->IsFlagTimestamp()){
-  //  AddEvent_TimeStamp(id, evsp);
-  //}
-  //if(evsp->IsFlagTrigger()){
-  //  AddEvent_TriggerN(id, evsp);
-  //}
-
-  //BuildEvent_TimeStamp();
-
-  //BuildEvent_Trigger();
-
-  //BuildEvent_Final();
+   if(evsp->GetDescription()=="DRSProducer") m_conn_indx[0]=idx;
+   if(evsp->GetDescription()=="FERSProducer") m_conn_indx[1]=idx;
 
    m_conn_evque[idx].push_back(evsp);
 
-   //uint32_t RunN = evsp->GetRunN();
-   uint32_t trigger_n = -1;
-   for(auto &conn_evque: m_conn_evque){
-     if(conn_evque.second.empty())
-       return;
-     else{
-       uint32_t trigger_n_ev = conn_evque.second.front()->GetTriggerN();
-       if(trigger_n_ev< trigger_n)
-   	trigger_n = trigger_n_ev;
-     }
+   int Nevt = 0;
+
+   if(m_conn_evque.size()>1) {
+        Nevt = m_conn_evque[m_conn_indx[0]].size();
+   	//std::cout<<" ----9999--- evsp->GetDescription() = "<<evsp->GetDescription()<<std::endl;
+   	//std::cout<<" ----9999---  m_conn_indx[0] = "<< m_conn_indx[0]<<std::endl;
+   	//std::cout<<" ----9999---  m_conn_indx[1] = "<< m_conn_indx[1]<<std::endl;
+   	//std::cout<<" ----9999--- m_conn_evque[m_conn_indx[0]].size() = "<<m_conn_evque[m_conn_indx[0]].size()<<std::endl;
+   	//std::cout<<" ----9999--- Nevt = "<<Nevt<<std::endl;
    }
+   if(!isCorrDRSdomainReady ) {
+        if (Nevt>140 ) { // for 100 Hz trigger rate & 1.3s delay
+                DRS_domainC = make_DRScnt_corr(&m_conn_evque);
+   		std::cout<<" ----9999--- DRS_domainC = "<<DRS_domainC<<std::endl;
+		if(DRS_domainC<0) {
+			m_conn_corr[m_conn_indx[0]]=DRS_domainC;
+			m_conn_corr[m_conn_indx[1]]=0;
+		}else{
+			m_conn_corr[m_conn_indx[0]]=0;
+			m_conn_corr[m_conn_indx[1]]=-DRS_domainC;
+		}
+        }
+   }else{
 
-  auto ev_sync = eudaq::Event::MakeUnique("FERS & DRS");
-  ev_sync->SetFlagPacket();
-  ev_sync->SetTriggerN(trigger_n);
-  for(auto &conn_evque: m_conn_evque){
-    auto &ev_front = conn_evque.second.front();
-    if(ev_front->GetTriggerN() == trigger_n){
-      ev_sync->AddSubEvent(ev_front);
-      conn_evque.second.pop_front();
-    }
-  }
+
+	   uint32_t RunN = evsp->GetRunN();
+	   int trigger_n = 100000000;
+	   for(auto &conn_evque: m_conn_evque){
+	     if(conn_evque.second.empty())
+	       return;
+	     else{
+	       int trigger_n_ev = conn_evque.second.front()->GetTriggerN() + m_conn_corr[conn_evque.first];
+	       if(trigger_n_ev< trigger_n)
+	   	trigger_n = trigger_n_ev;
+	     }
+	   }
 
 
-   if(!m_conn_inactive.empty()){
-     std::set<eudaq::ConnectionSPC> conn_inactive_empty;
-     for(auto &conn: m_conn_inactive){
-       if(m_conn_evque.find(conn) != m_conn_evque.end() &&
-   	 m_conn_evque[conn].empty()){
-   	m_conn_evque.erase(conn);
-   	conn_inactive_empty.insert(conn);
-       }
-     }
-     for(auto &conn: conn_inactive_empty){
-       m_conn_inactive.erase(conn);
-     }
-   }
-   //ev_sync->SetRunN(RunN);
-   if(!m_noprint)
-     ev_sync->Print(std::cout);
-   WriteEvent(std::move(ev_sync));
+	  auto ev_sync = eudaq::Event::MakeUnique("FERSDRS");
+	  ev_sync->SetFlagPacket();
+	  ev_sync->SetTriggerN(trigger_n);
+	  for(auto &conn_evque: m_conn_evque){
+	    auto &ev_front = conn_evque.second.front();
+	    if(ev_front->GetTriggerN() + m_conn_corr[conn_evque.first] == trigger_n){
+	      ev_sync->AddSubEvent(ev_front);
+	      conn_evque.second.pop_front();
+	    }
+	  }
+
+
+	   if(!m_conn_inactive.empty()){
+	     std::set<eudaq::ConnectionSPC> conn_inactive_empty;
+	     for(auto &conn: m_conn_inactive){
+	       if(m_conn_evque.find(conn) != m_conn_evque.end() &&
+	   	 m_conn_evque[conn].empty()){
+	   	m_conn_evque.erase(conn);
+	   	conn_inactive_empty.insert(conn);
+	       }
+	     }
+	     for(auto &conn: conn_inactive_empty){
+	       m_conn_inactive.erase(conn);
+	     }
+	   }
+	   ev_sync->SetRunN(RunN);
+
+	    uint32_t nsub = ev_sync->GetNumSubEvent();
+	    if (nsub>1) {
+		   if(!m_noprint)
+		       ev_sync->Print(std::cout);
+		   WriteEvent(std::move(ev_sync));
+	    }
+   } // if isCorrDRSdomainReady
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -491,3 +516,35 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
   std::cout<< "GetTriggerN() :: m_tg_curr_n   "<<  ev->GetTriggerN() << "   "<<m_tg_curr_n<<std::endl;
   };
 
+  int FERSDataCollector::make_DRScnt_corr(std::map<eudaq::ConnectionSPC, std::deque<eudaq::EventSPC>>* m_conn_evque){
+	int DRS_domainC =0;
+	if (m_conn_evque == nullptr) {
+        	// Handle null pointer
+        	return DRS_domainC;
+	}else{
+		std::map<int,uint64_t> DRS_time;
+
+	        auto it = m_conn_evque->find(m_conn_indx[0]);
+	        std::deque<eudaq::EventSPC>& eventDeque = it->second;
+
+		int nDRS = eventDeque.size();
+        	for (const auto& event : eventDeque) 
+	                DRS_time[event->GetEventN()]=static_cast<uint64_t>(event->GetTimestampBegin());
+
+	        it = m_conn_evque->find(m_conn_indx[1]);
+	        eventDeque = it->second;
+
+		uint64_t FERS_time;
+        	for (const auto& event : eventDeque) {
+	                FERS_time=static_cast<uint64_t>(event->GetTimestampBegin());
+			    for (auto itDRS = DRS_time.begin(); itDRS != DRS_time.end(); ++itDRS) {
+				if( std::abs(static_cast<long long int>(itDRS->second - FERS_time)) < 3000 ) {
+					DRS_domainC = event->GetEventN() - itDRS->first;
+					isCorrDRSdomainReady = true;
+					return DRS_domainC;
+				}
+    			    }
+		}
+	}
+	return DRS_domainC;
+  };

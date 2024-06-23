@@ -212,9 +212,7 @@ void FERSProducer::DoInitialise(){
 	}
 
 
-	shmp->EvCntCorrCommonFERS = 0;
 	shmp->isEvtCntCorrFERSReady = false;
-	shmp->isEvtCntCorrCommonFERSReady = false;
 
 
 
@@ -629,17 +627,21 @@ void FERSProducer::RunLoop(){
     			}
 
 			// Calculate the event missalighnment 
-			if(!shmp->isEvtCntCorrFERSReady && Nevt) {
-        			FERSProducer::make_evtCnt_corr(&m_conn_evque);
-			        for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
-					EUDAQ_WARN("FERS: board "+std::to_string(brd)
-					+" Local EvCntCorr "+std::to_string(shmp->EvCntCorrFERS[brd]));
-        			}
+			if(!shmp->isEvtCntCorrFERSReady ) {
+				if( Nevt > 14 ){
+	        			FERSProducer::make_evtCnt_corr(&m_conn_evque);
+				        for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+						EUDAQ_WARN("FERS: board "+std::to_string(brd)
+						+" Local EvCntCorr "+std::to_string(shmp->EvCntCorrFERS[brd]));
+        				}
+				}
+				Nevt = 0; 
     			}
+
 			// Remove unmatched pre-triggers
 			if(shmp->isEvtCntCorrFERSReady&&Nevt>0&&trigger_n<300) {
         	                for(auto &conn_evque: m_conn_evque){
-	                                int trigger_n_ev = conn_evque.second.front().trigger_id+shmp->EvCntCorrFERS[conn_evque.first]+shmp->EvCntCorrCommonFERS;
+	                                int trigger_n_ev = conn_evque.second.front().trigger_id+shmp->EvCntCorrFERS[conn_evque.first];
                         	        if(trigger_n_ev<0) {
 						conn_evque.second.pop_front();
 						Nevt = 0;
@@ -656,8 +658,7 @@ void FERSProducer::RunLoop(){
 
 	            		trigger_n=-1;
         	    		for(auto &conn_evque: m_conn_evque){
-                			int trigger_n_ev = conn_evque.second.front().trigger_id;  // Ev counter
-					trigger_n_ev+= shmp->EvCntCorrFERS[conn_evque.first] + shmp->EvCntCorrCommonFERS;
+                			int trigger_n_ev = conn_evque.second.front().trigger_id + shmp->EvCntCorrFERS[conn_evque.first];  // Ev counter
 					if(trigger_n_ev<0) {
 						conn_evque.second.pop_front();
 					}else{
@@ -673,24 +674,28 @@ void FERSProducer::RunLoop(){
 
 				m_conn_ev.clear(); // Just in case ...
 
+				int bCntr = 0;
 		            	for(auto &conn_evque: m_conn_evque){
         	        		auto &ev_front = conn_evque.second.front();
                 			int ibrd = conn_evque.first;
-                			if(ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd] + shmp->EvCntCorrCommonFERS == trigger_n){
+                			if(ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd]  == trigger_n){
                         			m_conn_ev[ibrd]=ev_front;
                         			conn_evque.second.pop_front();
+						bCntr++;
+                                        	//std::cout<<"---3334---  iboard= "<<ibrd<<std::endl;
 	                		}
         	    		}
 
                                         //std::cout<<"---3333---  ievt= "<<ievt
-                                        //        <<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id+shmp->EvCntCorrFERS[brd]
+                                        //        <<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id + shmp->EvCntCorrFERS[brd]
                                         //        <<" m_conn_ev.size() = "<<m_conn_ev.size()
                                         //        <<" trigger_n = "<<trigger_n
+                                        //        <<" bCntr = "<<bCntr
                                         //        <<std::endl;
 
                                         //std::cout<<"---3333---  trigger_id = " << trigger_n <<std::endl;
 
-	            		if(m_conn_ev.size()!=shmp->connectedboards) {
+	            		if(bCntr!=shmp->connectedboards) {
         	        		EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
                 	        		+" board's records instead of "+std::to_string(shmp->connectedboards) );
             			}else{
@@ -703,7 +708,7 @@ void FERSProducer::RunLoop(){
 							du_ts_beg_us += tp_trigger0;
 							//std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
 							std::chrono::microseconds du_ts_end_us(du_ts_beg_us + m_us_evt_length);
-							ev->SetTimestamp(du_ts_beg_us.count(), du_ts_end_us.count());
+							ev->SetTimestamp(static_cast<uint64_t>(du_ts_beg_us.count()), static_cast<uint64_t>(du_ts_end_us.count()));
 							//std::cout<<"---3333--- du_ts_beg_us "<<du_ts_beg_us.count()<<" du_ts_end_us "<<du_ts_end_us.count()<<std::endl;
 						}
                         			std::vector<uint8_t> data;
