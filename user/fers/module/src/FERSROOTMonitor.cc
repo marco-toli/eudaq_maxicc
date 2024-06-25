@@ -34,8 +34,8 @@ public:
   static const uint32_t m_id_factory = eudaq::cstr2hash("FERSROOTMonitor");
 
 private:
-  TH1D* m_FERS_LG_Ch_ADC[16];
-  TH1D* m_FERS_HG_Ch_ADC[16];
+  TH1D* m_FERS_LG_Ch_ADC[16][64];
+  TH1D* m_FERS_HG_Ch_ADC[16][64];
   TH1D* m_DRS_Ch_TS0_ADC[8];
   TProfile* m_DRS_Pulse_Ch0[8];
   //TH1D* m_my_hist;
@@ -72,13 +72,21 @@ void FERSROOTMonitor::AtConfiguration(){
 
 
   for(int i=0;i<shmp->connectedboards;i++) {
-	char hname[256];
-	sprintf (hname,"FERS/Board_%d/LG_ADC_allCh",i);
-	m_FERS_LG_Ch_ADC[i] =  m_monitor->Book<TH1D>(hname,"LG_ADC_allCh" ,
-		"h_LG_ADC_ch", "LG ADC per channel in all channels;ADC;# of evt", 4096, 0., 4096.);
-	sprintf (hname,"FERS/Board_%d/HG_ADC_allCh",i);
-	m_FERS_HG_Ch_ADC[i] =  m_monitor->Book<TH1D>(hname,"HG_ADC_allCh" ,
-		"h_HG_ADC_ch", "HG ADC per channel in all channels;ADC;# evt", 4096, 0., 4096.);
+	for(int ich=0;ich<64;ich++) {
+		char hname[256];
+		char tname[256];
+		char sname[256];
+		sprintf (hname,"FERS/Board_%d_LG/ADC_Ch%d",i,ich);
+		sprintf (tname,"Board %d LG_ADC_Ch%d",i,ich);
+		sprintf (sname,"h_Board%d_LG_ADC_Ch%d",i,ich);
+		m_FERS_LG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
+			"LG ADC per channel in all channels;ADC;# of evt", 4096, 0., 8192.);
+		sprintf (hname,"FERS/Board_%d_HG/ADC_Ch%d",i,ich);
+		sprintf (tname,"Board %d HG_ADC_Ch%d",i,ich);
+		sprintf (sname,"h_Board%d_HG_ADC_Ch%d",i,ich);
+		m_FERS_HG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
+			"HG ADC per channel;ADC;# evt", 4096, 0., 8192.);
+	}
   }
   for(int i=0;i<shmp->connectedboardsDRS;i++) {
         char hname[256];
@@ -121,8 +129,8 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
                                 {
                                         energyHG[i] = EventSpect.energyHG[i];
                                         energyLG[i] = EventSpect.energyLG[i];
-					m_FERS_LG_Ch_ADC[brd]->Fill(energyLG[i]);
-					m_FERS_HG_Ch_ADC[brd]->Fill(energyHG[i]);
+					m_FERS_LG_Ch_ADC[brd][i]->Fill(energyLG[i]);
+					m_FERS_HG_Ch_ADC[brd][i]->Fill(energyHG[i]);
 					//std::cout<<"---7777--- "<<energyHG[i]<<std::endl;
                                 }
 

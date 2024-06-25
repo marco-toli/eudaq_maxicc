@@ -29,7 +29,7 @@ class DRSProducer : public eudaq::Producer {
   void DoReset() override;
   void RunLoop() override;
   void make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>>* m_conn_evque);
-
+  CAEN_DGTZ_X742_EVENT_t* deep_copy_event(const CAEN_DGTZ_X742_EVENT_t *src) ;
 
   static const uint32_t m_id_factory = eudaq::cstr2hash("DRSProducer");
 private:
@@ -397,7 +397,17 @@ void DRSProducer::RunLoop(){
 	//	EUDAQ_INFO("DRS: Group=0, ch=0, TS=5, ADC= " + std::to_string(Event742->DataGroup[0].DataChannel[0][5]));
 	  }
           Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter;
-	  m_conn_evque[brd].push_back(*Event742);
+
+	  //m_conn_evque[brd].push_back(*Event742);
+	  m_conn_evque[brd].push_back(*DRSProducer::deep_copy_event(Event742)); // Fix for shallow copy in CAEN DIgitizer
+
+          //std::cout<<"---6666---Evt, btd,  Event742->DataGroup[0].DataChannel[0][1] "
+	  //		<<i<<" , "<<brd<<" , "<<Event742->DataGroup[0].DataChannel[0][1]
+	  //		<<" , "<<Event742->DataGroup[1].TriggerTimeTag
+	  //		<<" , "<<m_conn_evque[brd].back().DataGroup[1].TriggerTimeTag
+	  //		<<" , "<<m_conn_evque[brd].front().DataGroup[1].TriggerTimeTag
+	  //		<<std::endl;
+
           //EUDAQ_INFO("Plot "+std::to_string(brd)
           //      +" , "+std::to_string(EventInfo.EventCounter)
           //      +" , "+std::to_string(Event742->DataGroup[0].TriggerTimeTag/TTimeTag_calib/1000./2.+ 12. * (brd))
@@ -481,9 +491,15 @@ void DRSProducer::RunLoop(){
 	    for(auto &conn_evque: m_conn_evque){
 	    	auto &ev_front = conn_evque.second.front();
 		int ibrd = conn_evque.first;
+                        //std::cout<<"---1111---Evt, btd,  ev_front.DataGroup[0].DataChannel[0][1] trig "
+			//<<ievt<<" , "<<ibrd<<" , "<<ev_front.DataGroup[0].DataChannel[0][1]
+			//<<" , "<<ev_front.DataGroup[1].TriggerTimeTag
+			//<<std::endl;
+
  		if((ev_front.DataGroup[1].TriggerTimeTag + shmp->EvCntCorrDRS[conn_evque.first]) == trigger_n){
       			m_conn_ev[ibrd]=ev_front;
 			conn_evque.second.pop_front();
+
 	    	}
 	    }
 
@@ -518,6 +534,7 @@ void DRSProducer::RunLoop(){
 		     make_header(brd, PID_DRS[brd], &data);
 		     // Add data here
                      DRSpack_event(static_cast<void*>(&m_conn_ev[brd]),&data);
+
 	    	     ev->AddBlock(m_plane_id+brd, data);
 		}
           	//EUDAQ_INFO("Sending Ev");
@@ -597,3 +614,50 @@ void DRSProducer::make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT
     return;
 }
 
+CAEN_DGTZ_X742_EVENT_t* DRSProducer::deep_copy_event(const CAEN_DGTZ_X742_EVENT_t *src) {
+    // Allocate memory for the new event
+    CAEN_DGTZ_X742_EVENT_t *copy = (CAEN_DGTZ_X742_EVENT_t*)malloc(sizeof(CAEN_DGTZ_X742_EVENT_t));
+    if (copy == NULL) {
+        return NULL; // Memory allocation failed
+    }
+
+    // Copy GrPresent array
+    memcpy(copy->GrPresent, src->GrPresent, sizeof(src->GrPresent));
+
+    // Loop through each group and copy the data
+    for (int i = 0; i < MAX_X742_GROUP_SIZE; i++) {
+        if (src->GrPresent[i]) { // If the group has data
+            // Copy ChSize array
+            memcpy(copy->DataGroup[i].ChSize, src->DataGroup[i].ChSize, sizeof(src->DataGroup[i].ChSize));
+            
+            // Copy TriggerTimeTag and StartIndexCell
+            copy->DataGroup[i].TriggerTimeTag = src->DataGroup[i].TriggerTimeTag;
+            copy->DataGroup[i].StartIndexCell = src->DataGroup[i].StartIndexCell;
+
+            // Copy DataChannel pointers
+            for (int j = 0; j < MAX_X742_CHANNEL_SIZE; j++) {
+                if (src->DataGroup[i].ChSize[j] > 0) {
+                    // Allocate memory for the channel data
+                    copy->DataGroup[i].DataChannel[j] = (float*)malloc(src->DataGroup[i].ChSize[j] * sizeof(float));
+                    if (copy->DataGroup[i].DataChannel[j] == NULL) {
+                        // If allocation fails, free previously allocated memory
+                        for (int k = 0; k < j; k++) {
+                            free(copy->DataGroup[i].DataChannel[k]);
+                        }
+                        free(copy);
+                        return NULL; // Memory allocation failed
+                    }
+                    // Copy the channel data
+                    memcpy(copy->DataGroup[i].DataChannel[j], src->DataGroup[i].DataChannel[j], src->DataGroup[i].ChSize[j] * sizeof(float));
+                } else {
+                    copy->DataGroup[i].DataChannel[j] = NULL;
+                }
+            }
+        } else {
+            // If no data, set all pointers to NULL
+            memset(copy->DataGroup[i].DataChannel, 0, sizeof(copy->DataGroup[i].DataChannel));
+        }
+    }
+
+    return copy;
+}
