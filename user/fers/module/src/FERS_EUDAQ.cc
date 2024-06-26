@@ -643,7 +643,7 @@ void initshm( int shmid )
 		shmp->nchannels[i] = FERSLIB_MAX_NCH; // 64
 		shmp->AcquisitionMode[i] = 0;
 		memset(shmp->IP       [i], '\0', MAXCHAR);
-		memset(shmp->desc     [i], '\0', MAXCHAR);
+		//memset(shmp->desc     [i], '\0', MAXCHAR);
 		//memset(shmp->location [i], '\0', MAXCHAR);
 		memset(shmp->producer [i], '\0', MAXCHAR);
 		memset(shmp->collector[i], '\0', MAXCHAR);
@@ -668,7 +668,7 @@ void openasciistream(shmseg* shmp, int brd){
 	readme<<"board: "<< brd << std::endl;
 	readme<<"AcquisitionMode: "<< a <<std::endl;
 	readme<<"header of ascii file: "<< asciiheader[a] <<std::endl;
-	readme<<"desc: "<< shmp->desc[brd] << std::endl;
+	//readme<<"desc: "<< shmp->desc[brd] << std::endl;
 	//readme<<"location:"<< shmp->location[brd] << std::endl;
 	readme<<"IP:"<< shmp->IP[brd] << std::endl;
 	readme<<"HVbias:"<< std::to_string(shmp->HVbias[brd]) << std::endl;
@@ -706,7 +706,7 @@ void writeasciistream(int brd, std::string buffer){
 void dumpshm( struct shmseg* shmp, int brd )
 {
 	std::string output = "*** shmp["+std::to_string(brd)+"]="+
-	" desc: "+shmp->desc[brd]+
+	//" desc: "+shmp->desc[brd]+
 	//" location:"+shmp->location[brd]+
 	"";
 	EUDAQ_WARN(output);

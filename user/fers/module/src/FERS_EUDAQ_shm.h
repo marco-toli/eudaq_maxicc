@@ -34,7 +34,7 @@ struct shmseg {
         int AcquisitionMode[MAX_NBRD];
         //from ini file:
         char IP[MAX_NBRD][MAXCHAR]; // IP address
-        char desc[MAX_NBRD][MAXCHAR]; // for example serial number
+        //char desc[MAX_NBRD][MAXCHAR]; // for example serial number
         //char location[MAX_NBRD][MAXCHAR]; // for instance "on the scope"
         char producer[MAX_NBRD][MAXCHAR]; // title of producer
         // from conf file:
@@ -44,6 +44,12 @@ struct shmseg {
         int EvCntCorrFERS[MAX_NBRD] = {-1}; // DRS correction for event Cnt missmatch
         std::chrono::high_resolution_clock::time_point FERS_Aqu_start_time_us ;
 	int FERS_offset_us = 0;
+	// FERS monitoring
+	float tempFPGA[MAX_NBRD];
+        float hv_Vmon[MAX_NBRD];
+	float hv_Imon[MAX_NBRD];
+	uint8_t hv_status_on[MAX_NBRD];
+
 
         // DRS
         int connectedboardsDRS = 0; // number of connected DRS boards
