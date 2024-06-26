@@ -36,14 +36,21 @@ public:
 private:
   TH1D* m_FERS_LG_Ch_ADC[16][64];
   TH1D* m_FERS_HG_Ch_ADC[16][64];
-  TH1D* m_DRS_Ch_TS0_ADC[8];
-  TProfile* m_DRS_Pulse_Ch0[8];
+  TProfile* m_DRS_Pulse_Ch[8][32];
+
+  TH1D* m_FERS_tempFPGA;
+  TH1D* m_FERS_hv_Vmon;
+  TH1D* m_FERS_hv_Imon;
+  TH1I* m_FERS_hv_status_on;
+
+  TH1D* m_trgTime_diff;
   //TH1D* m_my_hist;
   //TGraph2D* m_my_graph;
 
   int brd;
   int PID; 
 
+  uint64_t trigTime[2];
   int energyLG[FERSLIB_MAX_NCH];
   int energyHG[FERSLIB_MAX_NCH];
 };
@@ -69,7 +76,12 @@ void FERSROOTMonitor::AtConfiguration(){
         }
 
 
+  m_FERS_tempFPGA =  m_monitor->Book<TH1D>("Monitor/FERS_tempFPGA","FERS_tempFPGA","h_FERS_tempFPGA","FERS_tempFPGA;Board;tempFPGA [C]",16,-0.5,15.5);
+  m_FERS_hv_Vmon =  m_monitor->Book<TH1D>("Monitor/FERS_hv_Vmon","FERS_hv_Vmon","h_FERS_hv_Vmon","FERS_hv_Vmon;Board;hv_Vmon [V]",16,-0.5,15.5);
+  m_FERS_hv_Imon =  m_monitor->Book<TH1D>("Monitor/FERS_hv_Imon","FERS_hv_Imon","h_FERS_hv_Imon","FERS_hv_Imon;Board;hv_Imon [mA]",16,-0.5,15.5);
+  m_FERS_hv_status_on =  m_monitor->Book<TH1I>("Monitor/FERS_hv_status_on","FERS_hv_status_on","h_FERS_hv_status_on","FERS_hv_status_on;Board;hv_status_on",16,-0.5,15.5);
 
+  m_trgTime_diff = m_monitor->Book<TH1D>("Monitor/trigTime_diff_FD","trigTime_diff_FD","h_trigTime_diff_FD","time difference between FERS and DRS in ms;;time(FERS-DRS) [ms]",3,0.,1.);
 
   for(int i=0;i<shmp->connectedboards;i++) {
 	for(int ich=0;ich<64;ich++) {
@@ -80,22 +92,28 @@ void FERSROOTMonitor::AtConfiguration(){
 		sprintf (tname,"Board %d LG_ADC_Ch%d",i,ich);
 		sprintf (sname,"h_Board%d_LG_ADC_Ch%d",i,ich);
 		m_FERS_LG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
-			"LG ADC per channel in all channels;ADC;# of evt", 4096, 0., 8192.);
+			"LG ADC;ADC;# of evt", 4096, 0., 8192.);
 		sprintf (hname,"FERS/Board_%d_HG/ADC_Ch%d",i,ich);
 		sprintf (tname,"Board %d HG_ADC_Ch%d",i,ich);
 		sprintf (sname,"h_Board%d_HG_ADC_Ch%d",i,ich);
 		m_FERS_HG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
-			"HG ADC per channel;ADC;# evt", 4096, 0., 8192.);
+			"HG ADC;ADC;# evt", 4096, 0., 8192.);
 	}
   }
   for(int i=0;i<shmp->connectedboardsDRS;i++) {
         char hname[256];
-	sprintf (hname,"DRS/Board_%d/Ch0_TS0_ADC",i);
-        m_DRS_Ch_TS0_ADC[i] =  m_monitor->Book<TH1D>(hname,"Ch0_TS0_ADC" ,
-                "h_Ch_TS0_ADC", "ADC in TS0;ADC;# of evt", 4096, 0., 4096.);
-	sprintf (hname,"DRS/Board_%d/Pulse_Ch0",i);
-  	m_DRS_Pulse_Ch0[i] = m_monitor->Book<TProfile>(hname, "DRS_Pulse_Ch0",
-    		"p_DRS_Pulse_Ch0", "Average Pulse Ch0;x-axis title;y-axis title", 1024, 0., 1024.);
+	char tname[256];
+	char sname[256];
+	//sprintf (hname,"DRS/Board_%d/Ch0_TS0_ADC",i);
+        //m_DRS_Ch_TS0_ADC[i] =  m_monitor->Book<TH1D>(hname,"Ch0_TS0_ADC" ,
+        //        "h_Ch_TS0_ADC", "ADC in TS0;ADC;# of evt", 4096, 0., 4096.);
+	for( int ich =0; ich < 32; ich++) {
+	sprintf (hname,"DRS/Board_%d/Pulse_Ch%d",i, ich);
+	sprintf (tname,"Board %d Pulse Ch%d",i,ich);
+	sprintf (sname,"h_Board%d_Pulse_Ch%d",i,ich);
+  	m_DRS_Pulse_Ch[i][ich] = m_monitor->Book<TProfile>(hname, tname , sname, 
+    		"Average Pulse ;TS;ADC", 1024, 0., 1024.);
+	}
   }
   //m_my_graph = m_monitor->Book<TGraph2D>("Channel 0/my_graph", "Example graph");
   //m_my_graph->SetTitle("A graph;x-axis title;y-axis title;z-axis title");
@@ -111,6 +129,7 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 	for(int iev=0; iev<nsub_ev;iev++) {
 		auto ev_sub = ev->GetSubEvent(iev);
 		if(ev_sub->GetDescription()=="FERSProducer") { // Decode FERS
+			trigTime[0]=ev_sub->GetTimestampBegin()/1000;
 			auto block_n_list = ev_sub->GetBlockNumList();
 			for(auto &block_n: block_n_list){
 		                std::vector<uint8_t> block = ev_sub->GetBlock(block_n);
@@ -124,6 +143,10 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 
   				SpectEvent_t EventSpect = FERSunpack_spectevent(&data);
 
+			        m_FERS_tempFPGA->SetBinContent(brd+1,shmp->tempFPGA[brd]);
+				m_FERS_hv_Vmon->SetBinContent(brd+1,shmp->hv_Vmon[brd]);
+			        m_FERS_hv_Imon->SetBinContent(brd+1,shmp->hv_Imon[brd]);
+			        m_FERS_hv_status_on->SetBinContent(brd+1,shmp->hv_status_on[brd]);
 
                                 for (int i=0; i<FERSLIB_MAX_NCH; i++)
                                 {
@@ -141,6 +164,7 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 
 		}else if(ev_sub->GetDescription()=="DRSProducer"){  //Decode DRS
 
+			trigTime[1]=ev_sub->GetTimestampBegin()/1000;
 			auto block_n_list = ev_sub->GetBlockNumList();
 			for(auto &block_n: block_n_list){
 		                std::vector<uint8_t> block = ev_sub->GetBlock(block_n);
@@ -154,17 +178,24 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 
 				if(data.size()>0) {
   					CAEN_DGTZ_X742_EVENT_t  Event = DRSunpack_event (&data);
-					//std::cout<<"---7777--- DRS unpacked "<<std::endl;
-					m_DRS_Ch_TS0_ADC[brd]->Fill(Event.DataGroup[0].DataChannel[0][0]);
-					//std::cout<<"---7777--- Event.DataGroup[0].ChSize[0] "<<Event.DataGroup[0].ChSize[0]<<std::endl;
-					for(int its=0;its<Event.DataGroup[0].ChSize[0];its++){
-						m_DRS_Pulse_Ch0[brd]->Fill(Float_t(its+0.5),Event.DataGroup[0].DataChannel[0][its]);
+					//m_DRS_Ch_TS0_ADC[brd]->Fill(Event.DataGroup[0].DataChannel[0][0]);
+					int hch = 0;
+					for (int igr=0; igr<4;igr++){
+						if (Event.GrPresent[igr]) {
+							for (int ich=0; ich<8;ich++){
+							hch = ich + igr*8;
+								for(int its=0;its<Event.DataGroup[igr].ChSize[ich];its++){
+									m_DRS_Pulse_Ch[brd][hch]->Fill(Float_t(its+0.5),Event.DataGroup[igr].DataChannel[ich][its]);
+								}
+							}
+						}
 					}
 				}
 			}
 
 		}else { // Decode Beam elements (to be included later)
 		}
+		m_trgTime_diff->SetBinContent(2,static_cast<double>(trigTime[0])-static_cast<double>(trigTime[1]));
 	}
 
 

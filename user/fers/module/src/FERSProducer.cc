@@ -185,14 +185,14 @@ void FERSProducer::DoInitialise(){
 
 						std::string fers_prodid = ini->Get("FERS_PRODID","no prod ID");
 						strcpy(shmp->IP[shmp->connectedboards],       tmp_path);
-						strcpy(shmp->desc[shmp->connectedboards],     std::to_string(FERS_pid(handle)).c_str());
+						//strcpy(shmp->desc[shmp->connectedboards],     std::to_string(FERS_pid(handle)).c_str());
 						//strcpy(shmp->location[shmp->connectedboards], fers_id.c_str());
 						strcpy(shmp->producer[shmp->connectedboards], fers_prodid.c_str());
 
 
 						EUDAQ_INFO("check shared on board "+std::to_string(shmp->connectedboards)+": "
 							+std::string(shmp->IP[shmp->connectedboards])
-							+"*"+std::string(shmp->desc[shmp->connectedboards])
+							//+"*"+std::string(shmp->desc[shmp->connectedboards])
 							+"*"+std::to_string(shmp->handle[shmp->connectedboards])
 							//+"*"+std::string(shmp->location[shmp->connectedboards])
 							+"*"+std::string(shmp->producer[shmp->connectedboards])
@@ -602,11 +602,22 @@ void FERSProducer::RunLoop(){
 		        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
 				status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
 				//if (status>1) break;
-				if (DataQualifier==47)  // Service event
+				if (DataQualifier==DTQ_SERVICE){  // Service event
+                                	ServEvent_t* Ev = (ServEvent_t*)Event;
+					shmp->tempFPGA[bindex]=Ev->tempFPGA;
+					shmp->hv_Vmon[bindex]=Ev->hv_Vmon;
+					shmp->hv_Imon[bindex]=Ev->hv_Imon;
+					shmp->hv_status_on[bindex]=Ev->hv_status_on;
 	                                status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+				}
 				if(nb>0&&DataQualifier==17) {
 					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
 					m_conn_evque[bindex].push_back(*EventSpect);
+
+					//if(bindex==2) 
+					//std::cout<<"---3333---  read trig id = "<<EventSpect->trigger_id
+					//	<<" energyLG[3] = "<<EventSpect->energyLG[3]
+					//	<<std::endl;
 
 					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
 					//	<<" DataQualifier= "<<DataQualifier
@@ -711,8 +722,12 @@ void FERSProducer::RunLoop(){
 							ev->SetTimestamp(static_cast<uint64_t>(du_ts_beg_us.count()), static_cast<uint64_t>(du_ts_end_us.count()));
 							//std::cout<<"---3333--- du_ts_beg_us "<<du_ts_beg_us.count()<<" du_ts_end_us "<<du_ts_end_us.count()<<std::endl;
 						}
-                        			std::vector<uint8_t> data;
+						//if(brd==2)
+						//std::cout<<"---3333---  send trig id = "<<m_conn_ev[brd].trigger_id
+						//	<<" energyLG[3] = "<<m_conn_ev[brd].energyLG[3]
+ 						//	<<std::endl;
 
+                        			std::vector<uint8_t> data;
 						make_header(brd, FERS_pid(vhandle[brd]), &data);
         	                		// Add data here
 						//FERSpackevent(Event, DataQualifier, &data);
@@ -733,7 +748,7 @@ void FERSProducer::RunLoop(){
 						int n_blocks = ev->AddBlock(block_id, data);
 
 						//std::cout<<"---3333---  brd="<<brd
-			
+
 			//	<<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id+shmp->EvCntCorrFERS[brd]
 						//	<<" block_id  "<<block_id
 						//	<<std::endl;

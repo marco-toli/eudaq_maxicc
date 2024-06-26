@@ -1,5 +1,10 @@
 #include "eudaq/DataCollector.hh"
 #include "eudaq/Event.hh"
+
+#include "FERSlib.h"
+#include "FERS_EUDAQ.h"
+#include "DRS_EUDAQ.h"
+
 #include <mutex>
 #include <deque>
 #include <map>
@@ -164,9 +169,9 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
    	//std::cout<<" ----9999--- Nevt = "<<Nevt<<std::endl;
    }
    if(!isCorrDRSdomainReady ) {
-        if (Nevt>140 ) { // for 100 Hz trigger rate & 1.3s delay
+        if (Nevt>111 ) { // for 100 Hz trigger rate & 1.3s delay
                 DRS_domainC = make_DRScnt_corr(&m_conn_evque);
-   		std::cout<<" ----9999--- DRS_domainC = "<<DRS_domainC<<std::endl;
+   		std::cout<<" ----9999--- Nevt = "<<Nevt<<" , DRS_domainC = "<<DRS_domainC<<std::endl;
 		if(DRS_domainC<0) {
 			m_conn_corr[m_conn_indx[0]]=DRS_domainC;
 			m_conn_corr[m_conn_indx[1]]=0;
@@ -197,6 +202,27 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
 	  for(auto &conn_evque: m_conn_evque){
 	    auto &ev_front = conn_evque.second.front();
 	    if(ev_front->GetTriggerN() + m_conn_corr[conn_evque.first] == trigger_n){
+/*
+		if(ev_front->GetDescription()=="FERSProducer") {
+			auto block_n_list = ev_front->GetBlockNumList();
+                        for(auto &block_n: block_n_list){
+                                std::vector<uint8_t> block = ev_front->GetBlock(block_n);
+				int brd;
+				int PID;
+
+                                int index = read_header(&block, &brd, &PID);
+                                std::vector<uint8_t> data(block.begin()+index, block.end());
+
+                                SpectEvent_t EventSpect = FERSunpack_spectevent(&data);
+			if(brd==2)
+			//std::cout<<"---7777---  send trig id = "<<EventSpect.trigger_id
+			std::cout<<"---7777---  send trig id = "<<ev_front->GetTriggerN()
+                                 <<" energyLG[3] = "<<EventSpect.energyLG[3]
+                                 <<std::endl;
+			}
+
+		}
+*/
 	      ev_sync->AddSubEvent(ev_front);
 	      conn_evque.second.pop_front();
 	    }
@@ -217,12 +243,13 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
 	     }
 	   }
 	   ev_sync->SetRunN(RunN);
+	   if(!m_noprint)
+	     ev_sync->Print(std::cout);
 
 	    uint32_t nsub = ev_sync->GetNumSubEvent();
 	    if (nsub>1) {
-		   if(!m_noprint)
-		       ev_sync->Print(std::cout);
-		   WriteEvent(std::move(ev_sync));
+		//ev_sync->Print(std::cout);
+		WriteEvent(std::move(ev_sync));
 	    }
    } // if isCorrDRSdomainReady
 }
