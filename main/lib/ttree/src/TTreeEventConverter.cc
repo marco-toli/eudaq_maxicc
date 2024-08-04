@@ -6,6 +6,7 @@ namespace eudaq{
   std::map<uint32_t, typename Factory<TTreeEventConverter>::UP(*)()>&
   Factory<TTreeEventConverter>::Instance<>();
   
+  int isub = 0;
   bool TTreeEventConverter::Convert(EventSPC d1, TTreeEventSP d2, ConfigurationSPC conf){
 
     if(d1->IsFlagFake()){
@@ -16,12 +17,16 @@ namespace eudaq{
       EUDAQ_INFO("Converting the inputfile to a root file ");
       uint32_t run_n = (d1->GetRunN());
       uint32_t event_n = (d1->GetEventN());
-      d2->Branch("run_n", &run_n, "run_n/I");
-      d2->Branch("event_n", &event_n, "event_n/I");
+      if (!d2->GetListOfBranches()->FindObject("run_n")) 
+	      d2->Branch("run_n", &run_n, "run_n/I");
+      if (!d2->GetListOfBranches()->FindObject("event_n")) 
+	      d2->Branch("event_n", &event_n, "event_n/I");
       if(d1->IsFlagTimestamp()){
-	uint64_t tsb = (int)d1->GetTimestampBegin();
+	//uint64_t tsb = (int)d1->GetTimestampBegin();
+	ULong64_t tsb = (int)d1->GetTimestampBegin();
 	d2->SetBranchAddress("timestampbegin", &tsb);
-	uint64_t tse = (int)d1->GetTimestampEnd();
+	//uint64_t tse = (int)d1->GetTimestampEnd();
+	ULong64_t tse = (int)d1->GetTimestampEnd();
 	d2->SetBranchAddress("timestampend", &tse);
       }
       uint32_t eflag = d1->GetFlag();
@@ -35,6 +40,8 @@ namespace eudaq{
       size_t nsub = d1->GetNumSubEvent();
       for(size_t i=0; i<nsub; i++){
 	auto subev = d1->GetSubEvent(i);
+	isub = i;
+	//std::cout<<"subevt "<<i<<std::endl;
 	if(!TTreeEventConverter::Convert(subev, d2, conf))
 	  return false;
       }
@@ -48,9 +55,11 @@ namespace eudaq{
       uint32_t event_n = (d1->GetEventN());
            d2->SetBranchAddress("event_n", &event_n);
       if(d1->IsFlagTimestamp()){
-	uint64_t tsb = (int)d1->GetTimestampBegin();
+	//uint64_t tsb = (int)d1->GetTimestampBegin();
+	ULong64_t tsb = (int)d1->GetTimestampBegin();
 	d2->SetBranchAddress("timestampbegin", &tsb);
-	uint64_t tse = (int)d1->GetTimestampEnd();
+	//uint64_t tse = (int)d1->GetTimestampEnd();
+	ULong64_t tse = (int)d1->GetTimestampEnd();
 	d2->SetBranchAddress("timestampend", &tse);
       }
 	uint32_t eflag = d1->GetFlag();
@@ -64,8 +73,14 @@ namespace eudaq{
 	  d2->SetBranchAddress("trigger_n", &trign);
 	}
     }
-    d2->Fill();      
-
+//    if (d2->GetListOfBranches()->FindObject( TString::Format("FERS_Board0_PID") )) {
+//       TBranch *branch = d2->GetBranch("FERS_Board0_PID");
+//       std::cout<<branch->GetEntries()<<std::endl;
+//    }
+    if ( isub == 0 ) {
+	//std::cout<<"Filling TTree "<< isub<<std::endl;
+        d2->Fill();
+    }
     uint32_t id = d1->GetType();
     auto cvt = Factory<TTreeEventConverter>::MakeUnique(id);
     if(cvt){

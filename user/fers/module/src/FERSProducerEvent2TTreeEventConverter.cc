@@ -1,0 +1,109 @@
+#include "eudaq/RawEvent.hh"
+//#include "eudaq/TTreeEventConverter.hh"
+#include "TTreeEventConverter.hh"
+#include "CAENDigitizerType.h" 
+#include "CAENDigitizer.h"
+#include "FERS_Registers_5202.h"
+#include "FERSlib.h"
+
+#include "DRS_EUDAQ.h"
+#include "FERS_EUDAQ.h"
+
+
+class FERSProducerEvent2TTreeEventConverter : public eudaq::TTreeEventConverter {
+public:
+    bool Converting(eudaq::EventSPC d1, eudaq::TTreeEventSP d2, eudaq::ConfigSPC conf) const override;
+    static const uint32_t m_id_factory;
+
+
+};
+
+const uint32_t FERSProducerEvent2TTreeEventConverter::m_id_factory = eudaq::cstr2hash("FERSProducer");
+
+namespace {
+    auto dummy0 = eudaq::Factory<eudaq::TTreeEventConverter>::
+        Register<FERSProducerEvent2TTreeEventConverter>(FERSProducerEvent2TTreeEventConverter::m_id_factory);
+}
+
+bool FERSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq::TTreeEventSP d2, eudaq::ConfigSPC conf) const {
+    auto ev = std::dynamic_pointer_cast<const eudaq::RawEvent>(d1);
+    if (!ev) {
+        EUDAQ_THROW("Failed to cast event to RawEvent");
+    }else{
+	//std::cout<<" ------- 8888 ------"<<std::endl;
+    }
+
+
+
+    int brd;
+    int PID[16];
+    int iPID;
+
+    uint64_t trigTime[2];
+
+    SpectEvent_t spect_event[16];
+    trigTime[1]=ev->GetTimestampBegin()/1000;
+    auto block_n_list = ev->GetBlockNumList();
+    for(auto &block_n: block_n_list){
+	std::vector<uint8_t> block = ev->GetBlock(block_n);
+        int index = read_header(&block, &brd, &iPID);
+	PID[brd]=iPID;
+        //std::cout<<"FERS Board= "<<brd<<", PID= "<<PID[brd]<<std::endl;
+
+        std::vector<uint8_t> data(block.begin()+index, block.end());
+	if(data.size()>0) {
+		spect_event[brd] = FERSunpack_spectevent(&data);
+
+
+		//for(int ich=0;ich<64;ich++)
+		//	std::cout<<spect_event[brd].energyLG[ich]<<std::endl;
+
+
+                TString boardPIDBranchName = TString::Format("FERS_Board%d_PID", brd);
+
+                if (d2->GetListOfBranches()->FindObject(boardPIDBranchName)) {
+                        d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
+                } else {
+                        d2->Branch(boardPIDBranchName, &PID[brd], "PID/I");
+                }
+
+		TString branch_name = TString::Format("FERS_Board%d_tstamp_us", brd);
+
+    		if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].tstamp_us);
+    		else d2->Branch(branch_name, &spect_event[brd].tstamp_us, "tstamp_us/D");
+
+		    branch_name = TString::Format("FERS_Board%d_rel_tstamp_us", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].rel_tstamp_us);
+		    else d2->Branch(branch_name, &spect_event[brd].rel_tstamp_us, "rel_tstamp_us/D");
+
+		    branch_name = TString::Format("FERS_Board%d_trigger_id", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].trigger_id);
+		    else d2->Branch(branch_name, &spect_event[brd].trigger_id, "trigger_id/g");
+
+		    branch_name = TString::Format("FERS_Board%d_chmask", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].chmask);
+		    else d2->Branch(branch_name, &spect_event[brd].chmask, "chmask/g");
+
+		    branch_name = TString::Format("FERS_Board%d_qdmask", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].qdmask);
+		    else d2->Branch(branch_name, &spect_event[brd].qdmask, "qdmask/g");
+
+		    branch_name = TString::Format("FERS_Board%d_energyHG", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyHG);
+		    else d2->Branch(branch_name, spect_event[brd].energyHG, "energyHG[64]/s");
+
+		    branch_name = TString::Format("FERS_Board%d_energyLG", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyLG);
+		    else d2->Branch(branch_name, spect_event[brd].energyLG, "energyLG[64]/s");
+
+
+	}
+    } //end block
+
+
+
+
+
+
+    return true;
+}
