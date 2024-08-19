@@ -38,7 +38,11 @@ private:
   int brd1[16] = {1,3,5,7,9,11,13,15,33,35,37,39,41,43,45,47};
   TH1D* m_FERS_LG_Ch_ADC[16][64];
   TH1D* m_FERS_HG_Ch_ADC[16][64];
-  TH1D* m_FERS_HG_Ch_ADC1[16];
+  TH1D* m_FERS_ToA_Ch_ADC[16][64];
+  TH1D* m_FERS_ToT_Ch_ADC[16][64];
+
+
+  //TH1D* m_FERS_HG_Ch_ADC1[16];
   TProfile* m_DRS_Pulse_Ch[8][32];
 
   TH1D* m_FERS_tempFPGA;
@@ -50,7 +54,7 @@ private:
   //TH1D* m_my_hist;
   //TGraph2D* m_my_graph;
 
-  TH2D* m_DRS_FERS;
+  //TH2D* m_DRS_FERS;
 
 
   int brd;
@@ -59,6 +63,9 @@ private:
   uint64_t trigTime[2];
   int energyLG[FERSLIB_MAX_NCH];
   int energyHG[FERSLIB_MAX_NCH];
+  int tstamp[FERSLIB_MAX_NCH];
+  int ToT[FERSLIB_MAX_NCH];
+
 };
 
 namespace{
@@ -89,6 +96,7 @@ void FERSROOTMonitor::AtConfiguration(){
 
   m_trgTime_diff = m_monitor->Book<TH1D>("Monitor/trigTime_diff_FD","trigTime_diff_FD","h_trigTime_diff_FD","time difference between FERS and DRS in ms;;time(FERS-DRS) [ms]",3,0.,1.);
 
+/*
   for(int ich=0;ich<16;ich++) {
 		char hname[256];
 		char tname[256];
@@ -99,7 +107,7 @@ void FERSROOTMonitor::AtConfiguration(){
 		m_FERS_HG_Ch_ADC1[ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
 			"HG ADC;ADC;# of evt", 4096, 0., 8192.);
   }
-
+*/
   for(int i=0;i<shmp->connectedboards;i++) {
 	for(int ich=0;ich<64;ich++) {
 		char hname[256];
@@ -110,11 +118,24 @@ void FERSROOTMonitor::AtConfiguration(){
 		sprintf (sname,"h_Board%02d_LG_ADC_Ch%02d",i,ich);
 		m_FERS_LG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
 			"LG ADC;ADC;# of evt", 4096, 0., 8192.);
+
 		sprintf (hname,"FERS/Board_%02d_HG/ADC_Ch%02d",i,ich);
 		sprintf (tname,"Board %02d HG_ADC_Ch%02d",i,ich);
 		sprintf (sname,"h_Board%02d_HG_ADC_Ch%02d",i,ich);
 		m_FERS_HG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
 			"HG ADC;ADC;# evt", 4096, 0., 8192.);
+
+		sprintf (hname,"FERS/Board_%02d_ToA/ADC_Ch%02d",i,ich);
+		sprintf (tname,"Board %02d ToA_ADC_Ch%02d",i,ich);
+		sprintf (sname,"h_Board%02d_ToA_ADC_Ch%02d",i,ich);
+		m_FERS_ToA_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
+			"ToA ADC;ADC;# evt", 1000, 0., 1000.);
+
+		sprintf (hname,"FERS/Board_%02d_ToT/ADC_Ch%02d",i,ich);
+		sprintf (tname,"Board %02d ToT_ADC_Ch%02d",i,ich);
+		sprintf (sname,"h_Board%02d_ToT_ADC_Ch%02d",i,ich);
+		m_FERS_ToT_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
+			"ToT ADC;ADC;# evt", 1000, 0., 1000.);
 	}
   }
   for(int i=0;i<shmp->connectedboardsDRS;i++) {
@@ -135,7 +156,7 @@ void FERSROOTMonitor::AtConfiguration(){
   //m_my_graph = m_monitor->Book<TGraph2D>("Channel 0/my_graph", "Example graph");
   //m_my_graph->SetTitle("A graph;x-axis title;y-axis title;z-axis title");
   //m_monitor->SetDrawOptions(m_my_graph, "colz");
-  m_DRS_FERS =  m_monitor->Book<TH2D>("Test/FERS_DRS_2D", "FERS_DRS_2D" ,"h_FERS_DRS_2D","Aplitude FERS vs DRS int;DRS intADC;FERS ADC", 200,0.,1000.,200,0.,8000.);
+  //m_DRS_FERS =  m_monitor->Book<TH2D>("Test/FERS_DRS_2D", "FERS_DRS_2D" ,"h_FERS_DRS_2D","Aplitude FERS vs DRS int;DRS intADC;FERS ADC", 200,0.,1000.,200,0.,8000.);
 }
 
 void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
@@ -162,7 +183,7 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 				//std::cout<<"---7777--- brd = "<<brd<<std::endl;
 				//std::cout<<"---7777--- PID = "<<PID<<std::endl;
 
-  				SpectEvent_t EventSpect = FERSunpack_spectevent(&data);
+  				SpectEvent_t EventSpect = FERSunpack_tspectevent(&data);
 
 			        m_FERS_tempFPGA->SetBinContent(brd+1,shmp->tempFPGA[brd]);
 				m_FERS_hv_Vmon->SetBinContent(brd+1,shmp->hv_Vmon[brd]);
@@ -173,15 +194,19 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
                                 {
                                         energyHG[i] = EventSpect.energyHG[i];
                                         energyLG[i] = EventSpect.energyLG[i];
+                                        tstamp[i] = EventSpect.tstamp[i];
+                                        ToT[i] = EventSpect.ToT[i];
 					m_FERS_LG_Ch_ADC[brd][i]->Fill(energyLG[i]);
 					m_FERS_HG_Ch_ADC[brd][i]->Fill(energyHG[i]);
+					m_FERS_ToA_Ch_ADC[brd][i]->Fill(tstamp[i]);
+					m_FERS_ToT_Ch_ADC[brd][i]->Fill(ToT[i]);
 					//std::cout<<"---7777--- "<<energyHG[i]<<std::endl;
-					if(brd==2 && i==3) sigFERS=energyLG[i];
-					if(brd==1) {
-						for(int ik=0;ik<16;ik++){
-							if(i==brd1[ik]) m_FERS_HG_Ch_ADC1[ik]->Fill(energyHG[i]);
-						}
-					}
+					//if(brd==2 && i==3) sigFERS=energyLG[i];
+					//if(brd==1) {
+					//	for(int ik=0;ik<16;ik++){
+					//		if(i==brd1[ik]) m_FERS_HG_Ch_ADC1[ik]->Fill(energyHG[i]);
+					//	}
+					//}
                                 }
 
 
@@ -214,10 +239,10 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 								m_DRS_Pulse_Ch[brd][hch]->Reset();
 								for(int its=0;its<Event.DataGroup[igr].ChSize[ich];its++){
 									m_DRS_Pulse_Ch[brd][hch]->Fill(Float_t(its+0.5),Event.DataGroup[igr].DataChannel[ich][its]);
-	if (brd==3&&igr==0&&ich==0)
-	  if(its>=300&&its<500) sigDRS+=Event.DataGroup[igr].DataChannel[ich][its];
-	if (brd==3&&igr==0&&ich==1)
-	  if(its>=300&&its<500) pedDRS+=Event.DataGroup[igr].DataChannel[ich][its];
+	//if (brd==3&&igr==0&&ich==0)
+	  //if(its>=300&&its<500) sigDRS+=Event.DataGroup[igr].DataChannel[ich][its];
+	//if (brd==3&&igr==0&&ich==1)
+	  //if(its>=300&&its<500) pedDRS+=Event.DataGroup[igr].DataChannel[ich][its];
 								}
 							}
 						}
@@ -229,7 +254,7 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 		}
 	}
 		m_trgTime_diff->SetBinContent(2,static_cast<double>(trigTime[0])-static_cast<double>(trigTime[1]));
-		m_DRS_FERS->Fill((sigDRS-pedDRS+93000)/10.,sigFERS);
+		//m_DRS_FERS->Fill((sigDRS-pedDRS+93000)/10.,sigFERS);
 		//std::cout<<"---9999---"<<sigFERS<<" , "<<sigDRS-pedDRS<<" , "<<pedDRS<<" , "<<sigDRS<<std::endl;
 
 

@@ -601,6 +601,9 @@ void FERSProducer::RunLoop(){
 
 		        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
 				status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
+					//	<<" DataQualifier= "<<DataQualifier
+					//	<<std::endl;
 				//if (status>1) break;
 				if (DataQualifier==DTQ_SERVICE){  // Service event
                                 	ServEvent_t* Ev = (ServEvent_t*)Event;
@@ -610,14 +613,16 @@ void FERSProducer::RunLoop(){
 					shmp->hv_status_on[bindex]=Ev->hv_status_on;
 	                                status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
 				}
-				if(nb>0&&DataQualifier==17) {
+				if(nb>0&&DataQualifier==19) { // Data event in Spec + Time mode
 					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
 					m_conn_evque[bindex].push_back(*EventSpect);
 
-					//if(bindex==2) 
-					//std::cout<<"---3333---  read trig id = "<<EventSpect->trigger_id
-					//	<<" energyLG[3] = "<<EventSpect->energyLG[3]
-					//	<<std::endl;
+					if(bindex==0) 
+					std::cout<<"---3333---  read trig id = "<<EventSpect->trigger_id
+						<<" energyLG[1] = "<<EventSpect->energyLG[1]
+						<<" ToA[1] = "<<EventSpect->tstamp[1]
+						<<" ToT[1] = "<<EventSpect->ToT[1]
+						<<std::endl;
 
 					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
 					//	<<" DataQualifier= "<<DataQualifier
@@ -732,7 +737,7 @@ void FERSProducer::RunLoop(){
         	                		// Add data here
 						//FERSpackevent(Event, DataQualifier, &data);
 						//FERSpackevent( static_cast<void*>(&m_conn_ev[brd]), DataQualifier, &data);
-						FERSpack_spectevent(static_cast<void*>(&m_conn_ev[brd]),&data);
+						FERSpack_tspectevent(static_cast<void*>(&m_conn_ev[brd]),&data);
 						//std::cout<<"---3333---  m_conn_ev[brd].trigger_id "<<m_conn_ev[brd].trigger_id<<std::endl;
 						//std::cout<<"---3333---  m_conn_ev[brd].tstamp_us/1000. "<<m_conn_ev[brd].tstamp_us/1000<<std::endl;
 						//std::cout<<"---3333---  data.size() "<<data.size()<<std::endl;

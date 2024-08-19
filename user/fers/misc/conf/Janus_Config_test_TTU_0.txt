@@ -4,8 +4,8 @@
 # ------------------------------------------------------------------------------------------
 # Connect
 # ------------------------------------------------------------------------------------------
-Open[0] eth:192.168.50.125:tdl:0:1
-Open[1] eth:192.168.50.125:tdl:0:0
+Open[0] eth:192.168.50.125:tdl:0:0
+Open[1] eth:192.168.50.125:tdl:0:1
 Open[2] eth:192.168.50.125:tdl:3:0
 
 
@@ -16,7 +16,7 @@ Open[2] eth:192.168.50.125:tdl:3:0
 # ------------------------------------------------------------------------------------------
 # HV_bias
 # ------------------------------------------------------------------------------------------
-HV_Vbias                           55 V                 # Bias voltage, Range=[20 V, 85 V] (common to all channels, fine adjustable channel by channel by "HV_IndivAdj")
+HV_Vbias                           29                   # Bias voltage, Range=[20 V, 85 V] (common to all channels, fine adjustable channel by channel by "HV_IndivAdj")
 HV_Imax                            1.0 mA               # Max current provided by the HV. The HV will be shut down if the current exceeds this limit.
 HV_Adjust_Range                    4.5                  # DAC range for the individual HV adjust.. Options: 4.5, 2.5, DISABLED
 HV_IndivAdj                        255                  # DAC setting for the Individual HV Adjust. Range from 0 to 255
@@ -39,7 +39,7 @@ RunSleep                           0 s                  # Wait Time between runs
 EnableJobs                         0                    # Enable Jobs
 RunNumber_AutoIncr                 0                    # Run Number auto increment
 DataAnalysis                       ALL                  # Data Analysis Enable/disable mask. Options: ALL, CNT_ONLY, DISABLED
-DataFilePath                       DataFiles            # Destination folder to save the output files
+DataFilePath                       .                    # Destination folder to save the output files
 OF_OutFileUnit                     LSB                  # ToA and ToT unit. Options: LSB, ns
 OF_EnMaxSize                       0                    # Enable List file maximum size (Raw, binary, ASCII, CSV)
 OF_MaxSize                         1 GB                 # Max size of List files (in Bytes), minimum size allowed 1 kB
@@ -59,7 +59,7 @@ OF_Staircase                       0                    # Staircase
 # ------------------------------------------------------------------------------------------
 # AcqMode
 # ------------------------------------------------------------------------------------------
-AcquisitionMode                    SPECTROSCOPY         # Acquisition mode. Options: SPECTROSCOPY, SPECT_TIMING, TIMING_CSTART, TIMING_CSTOP, COUNTING, WAVEFORM
+AcquisitionMode                    SPECT_TIMING         # Acquisition mode. Options: SPECTROSCOPY, SPECT_TIMING, TIMING_CSTART, TIMING_CSTOP, COUNTING, WAVEFORM
 EnableToT                          1                    # Enable ToT in timing mode (Enabled: ToA = 16 bits, ToT = 9 bits; Disabled: ToA = 25 bits)
 BunchTrgSource                     T0-IN                # Bunch Trigger source (for spectroscopy and counting modes). Options: T0-IN, T1-IN, Q-OR, T-OR, TLOGIC, PTRG
 VetoSource                         DISABLED             # The veto signal inhibits the bunch trigger (active high). Options: DISABLED, SW_CMD, T0-IN, T1-IN
@@ -69,11 +69,11 @@ CountingMode                       SINGLES              # SINGLES: each channel 
 ChTrg_Width                        0 ns                 # Coincidence window for Paired_And counting mode. Min = 8 ns, Max = 2032 ns, Step = 8 ns
 EnableCntZeroSuppr                 1                    # Enable the suppression of the channels with 0 counts in COUNTING mode.
 TrgIdMode                          TRIGGER_CNT          # Trigger ID mode: TRIGGER_CNT counts all triggers arrived to the board (accepted or not); VALIDATION_CNT counts validation signals (with or without associated trigger). Options: TRIGGER_CNT, VALIDATION_CNT
-TriggerLogic                       OR64                 # Trigger Logic (Combinatorial network with 64 self trigger inputs). Options: OR64, AND2_OR32, OR32_AND2, MAJ64, MAJ32_AND2, OR_QUAD
+TriggerLogic                       MAJ64                # Trigger Logic (Combinatorial network with 64 self trigger inputs). Options: OR64, AND2_OR32, OR32_AND2, MAJ64, MAJ32_AND2, OR_QUAD
 Tlogic_Width                       0 ns                 # TriggerLogic output width (0=linear)
 MajorityLevel                      3                    # Majority Level (1 to 64)
-PtrgPeriod                         10 ms                # Period of the internal periodic trigger
-TrefSource                         T1-IN                # Tref source for timing mode (common start/stop). Options: T0-IN, T1-IN, Q-OR, T-OR, PTRG, TLOGIC
+PtrgPeriod                         200 ms               # Period of the internal periodic trigger
+TrefSource                         T0-IN                # Tref source for timing mode (common start/stop). Options: T0-IN, T1-IN, Q-OR, T-OR, PTRG, TLOGIC
 TrefWindow                         1.0 us               # Tref window (gate) in timing mode (common start/stop)
 TrefDelay                          0 ns                 # Tref delay in timing mode (can be negative)
 T0_Out                             ZERO                 # T0_Out assignment. Options: T0-IN, BUNCHTRG, T-OR, TLOGIC, RUN, PTRG, BUSY, DPROBE, SQ_WAVE, TDL_SYNC, RUN_SYNC, ZERO
