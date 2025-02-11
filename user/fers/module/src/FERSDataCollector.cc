@@ -213,7 +213,7 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
                                 int index = read_header(&block, &brd, &PID);
                                 std::vector<uint8_t> data(block.begin()+index, block.end());
 
-                                SpectEvent_t EventSpect = FERSunpack_spectevent(&data);
+                                SpectEvent_t EventSpect = FERSunpack_tspectevent(&data);
 			if(brd==2)
 			//std::cout<<"---7777---  send trig id = "<<EventSpect.trigger_id
 			std::cout<<"---7777---  send trig id = "<<ev_front->GetTriggerN()
@@ -223,7 +223,8 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
 
 		}
 */
-	      ev_sync->AddSubEvent(ev_front);
+              if( ev_front->NumBlocks()>0)
+	          ev_sync->AddSubEvent(ev_front);
 	      conn_evque.second.pop_front();
 	    }
 	  }

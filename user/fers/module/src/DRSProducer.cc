@@ -205,6 +205,14 @@ void DRSProducer::DoConfigure(){
     	EUDAQ_THROW("DRS: ProgramDigitizer-read failed on board"+std::to_string(BoardInfo.SerialNumber));
      }
 
+     // Load DRS factory calibration - baseline
+
+     if ((ret = CAEN_DGTZ_LoadDRS4CorrectionData(vhandle[brd], WDcfg.DRS4Frequency)) != CAEN_DGTZ_Success)
+         EUDAQ_INFO("DRS: Cannot LoadDRS4CorrectionData on board "+std::to_string(brd));
+     if ((ret = CAEN_DGTZ_EnableDRS4Correction(vhandle[brd])) != CAEN_DGTZ_Success)
+        EUDAQ_INFO("DRS: Cannot EnableDRS4Correction on board "+std::to_string(brd));
+
+
   }
   // Allocate memory for the event data and readout buffer
   for( int brd = 0 ; brd<NBoardsDRS;brd++) {

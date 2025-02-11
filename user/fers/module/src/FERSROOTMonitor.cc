@@ -38,8 +38,8 @@ private:
   int brd1[16] = {1,3,5,7,9,11,13,15,33,35,37,39,41,43,45,47};
   TH1D* m_FERS_LG_Ch_ADC[16][64];
   TH1D* m_FERS_HG_Ch_ADC[16][64];
-  TH1D* m_FERS_ToA_Ch_ADC[16][64];
-  TH1D* m_FERS_ToT_Ch_ADC[16][64];
+  //TH1D* m_FERS_ToA_Ch_ADC[16][64];
+  //TH1D* m_FERS_ToT_Ch_ADC[16][64];
 
 
   //TH1D* m_FERS_HG_Ch_ADC1[16];
@@ -124,18 +124,19 @@ void FERSROOTMonitor::AtConfiguration(){
 		sprintf (sname,"h_Board%02d_HG_ADC_Ch%02d",i,ich);
 		m_FERS_HG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
 			"HG ADC;ADC;# evt", 4096, 0., 8192.);
-
+/*
 		sprintf (hname,"FERS/Board_%02d_ToA/ADC_Ch%02d",i,ich);
 		sprintf (tname,"Board %02d ToA_ADC_Ch%02d",i,ich);
 		sprintf (sname,"h_Board%02d_ToA_ADC_Ch%02d",i,ich);
 		m_FERS_ToA_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
-			"ToA ADC;ADC;# evt", 1000, 0., 1000.);
+			"ToA ADC;ADC;# evt", 1000, 0., 500.);
 
 		sprintf (hname,"FERS/Board_%02d_ToT/ADC_Ch%02d",i,ich);
 		sprintf (tname,"Board %02d ToT_ADC_Ch%02d",i,ich);
 		sprintf (sname,"h_Board%02d_ToT_ADC_Ch%02d",i,ich);
 		m_FERS_ToT_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
-			"ToT ADC;ADC;# evt", 1000, 0., 1000.);
+			"ToT ADC;ADC;# evt", 400, 0., 200.);
+*/
 	}
   }
   for(int i=0;i<shmp->connectedboardsDRS;i++) {
@@ -183,7 +184,8 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 				//std::cout<<"---7777--- brd = "<<brd<<std::endl;
 				//std::cout<<"---7777--- PID = "<<PID<<std::endl;
 
-  				SpectEvent_t EventSpect = FERSunpack_tspectevent(&data);
+  				SpectEvent_t EventSpect = FERSunpack_spectevent(&data);
+  				//SpectEvent_t EventSpect = FERSunpack_tspectevent(&data);
 
 			        m_FERS_tempFPGA->SetBinContent(brd+1,shmp->tempFPGA[brd]);
 				m_FERS_hv_Vmon->SetBinContent(brd+1,shmp->hv_Vmon[brd]);
@@ -194,13 +196,13 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
                                 {
                                         energyHG[i] = EventSpect.energyHG[i];
                                         energyLG[i] = EventSpect.energyLG[i];
-                                        tstamp[i] = EventSpect.tstamp[i];
-                                        ToT[i] = EventSpect.ToT[i];
+                                        //tstamp[i] = EventSpect.tstamp[i];
+                                        //ToT[i] = EventSpect.ToT[i];
 					m_FERS_LG_Ch_ADC[brd][i]->Fill(energyLG[i]);
 					m_FERS_HG_Ch_ADC[brd][i]->Fill(energyHG[i]);
-					m_FERS_ToA_Ch_ADC[brd][i]->Fill(tstamp[i]);
-					m_FERS_ToT_Ch_ADC[brd][i]->Fill(ToT[i]);
-					//std::cout<<"---7777--- "<<energyHG[i]<<std::endl;
+					//m_FERS_ToA_Ch_ADC[brd][i]->Fill(tstamp[i]);
+					//m_FERS_ToT_Ch_ADC[brd][i]->Fill(ToT[i]);
+					//std::cout<<"---7777--- ToA "<<ToT[i]<<"["<<i<<"]"<<EventSpect.ToT[i]<<std::endl;
 					//if(brd==2 && i==3) sigFERS=energyLG[i];
 					//if(brd==1) {
 					//	for(int ik=0;ik<16;ik++){

@@ -175,7 +175,7 @@
 [1105 : 1105] ( 1) -PWen T-DAC    = 1      (0x1)
 [1106 : 1106] ( 1) -PWpm T-DAC    = 1      (0x1)
 [1116 : 1107] (10) QD coarse Thr  = 380    (0x17C)
-[1126 : 1117] (10) TD coarse Thr  = 236    (0xEC)
+[1126 : 1117] (10) TD coarse Thr  = 210    (0xD2)
 [1127 : 1127] ( 1) -PWen HG OTA   = 1      (0x1)
 [1128 : 1128] ( 1) -PWpm HG OTA   = 1      (0x1)
 [1129 : 1129] ( 1) -PWen LG OTA   = 1      (0x1)

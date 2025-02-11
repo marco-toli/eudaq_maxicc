@@ -52,7 +52,7 @@ bool FERSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq
 
         std::vector<uint8_t> data(block.begin()+index, block.end());
 	if(data.size()>0) {
-		spect_event[brd] = FERSunpack_spectevent(&data);
+		spect_event[brd] = FERSunpack_tspectevent(&data);
 
 
 		//for(int ich=0;ich<64;ich++)
@@ -95,6 +95,14 @@ bool FERSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq
 		    branch_name = TString::Format("FERS_Board%d_energyLG", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyLG);
 		    else d2->Branch(branch_name, spect_event[brd].energyLG, "energyLG[64]/s");
+
+		    branch_name = TString::Format("FERS_Board%d_ToA", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].tstamp);
+		    else d2->Branch(branch_name, spect_event[brd].tstamp, "ToA[64]/i");
+
+		    branch_name = TString::Format("FERS_Board%d_ToT", brd);
+		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].ToT);
+		    else d2->Branch(branch_name, spect_event[brd].ToT, "ToT[64]/s");
 
 
 	}

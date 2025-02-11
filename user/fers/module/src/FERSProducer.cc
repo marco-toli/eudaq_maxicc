@@ -451,14 +451,15 @@ void FERSProducer::RunLoop(){
 	std::uniform_int_distribution<uint32_t> signal(0, 63);
 
 
+	int newData =0; 
 	while(!m_exit_of_run){
 
+/*
 		// staircase?
 		static bool stairdone = false;
 
 		if (stair_do) // Check if it works with DT5215 ...
 		{
-/*
 
 			std::vector<uint8_t> hit(x_pixel*y_pixel, 0);
 			hit[position(gen)] = signal(gen);
@@ -574,8 +575,8 @@ void FERSProducer::RunLoop(){
 				EUDAQ_INFO("Producer > staircase event sent");
 				EUDAQ_WARN("*** *** PLEASE STOP THE RUN *** ***");
 			}
-*/
 		} else { // not staircase
+*/
 
 			auto tp_trigger = std::chrono::steady_clock::now();
 			auto tp_end_of_busy = tp_trigger + m_ms_busy;
@@ -598,30 +599,54 @@ void FERSProducer::RunLoop(){
 			//SpectEvent_t EventSpect2;
 			int r_status=0;
 			//std::cout<<"---3333---  --------------------------------"<<std::endl;
+/*
+    auto now = std::chrono::system_clock::now();
+    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm* now_tm = std::localtime(&now_time_t);
 
-		        for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
+    auto now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
+
+    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
+              << std::setw(3) << std::setfill('0') << now_ms.count()
+              << " start reading" << std::endl;
+*/
+
+			DataQualifier=1000;
+		        //for(brd =0; brd < shmp->connectedboards+1; brd++) { // loop over boards
+		        while(DataQualifier>0) { // read all data from the boards
 				status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
 					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
 					//	<<" DataQualifier= "<<DataQualifier
 					//	<<std::endl;
 				//if (status>1) break;
+				if (DataQualifier>0) {
+					std::cout<<"---3333--- DataQualifier = "<<DataQualifier
+					<<" nb = "<<nb
+					<<" status = "<<status
+					<<std::endl;
+				}
 				if (DataQualifier==DTQ_SERVICE){  // Service event
                                 	ServEvent_t* Ev = (ServEvent_t*)Event;
 					shmp->tempFPGA[bindex]=Ev->tempFPGA;
 					shmp->hv_Vmon[bindex]=Ev->hv_Vmon;
 					shmp->hv_Imon[bindex]=Ev->hv_Imon;
 					shmp->hv_status_on[bindex]=Ev->hv_status_on;
-	                                status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+  				        std::cout<<"---3333---  service event on board "<<bindex<<std::endl;
+					//while (DataQualifier==DTQ_SERVICE)
+	                                //    status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
 				}
-				if(nb>0&&DataQualifier==19) { // Data event in Spec + Time mode
+				//if(nb>0&&DataQualifier==19) { // Data event in Spec + Time mode
+				if(nb>0&&DataQualifier==17) { // Data event in Spec 
+					newData++;
 					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
 					m_conn_evque[bindex].push_back(*EventSpect);
 
-					if(bindex==0) 
+					//if(bindex==0) 
 					std::cout<<"---3333---  read trig id = "<<EventSpect->trigger_id
-						<<" energyLG[1] = "<<EventSpect->energyLG[1]
-						<<" ToA[1] = "<<EventSpect->tstamp[1]
-						<<" ToT[1] = "<<EventSpect->ToT[1]
+						<<" bindex = "<<bindex
+						<<" energyHG[1] = "<<EventSpect->energyHG[1]
+						//<<" ToA[1] = "<<EventSpect->tstamp[1]
+						//<<" ToT[1] = "<<EventSpect->ToT[1]
 						<<std::endl;
 
 					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
@@ -632,9 +657,21 @@ void FERSProducer::RunLoop(){
 					//	<<" nb= "<<nb<<std::endl;
 				}
 			}
+/*
+    now = std::chrono::system_clock::now();
+    now_time_t = std::chrono::system_clock::to_time_t(now);
+    now_tm = std::localtime(&now_time_t);
 
+    now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
 
-    			int Nevt = 128;
+    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
+              << std::setw(6) << std::setfill('0') << now_ms.count()
+              << " end reading" << std::endl;
+*/
+
+		if( newData >= shmp->connectedboards) {
+			newData=0;
+    			int Nevt = 512;
 
 			// check if there is enough DRS data to asample an event 
     			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
@@ -691,16 +728,20 @@ void FERSProducer::RunLoop(){
 				m_conn_ev.clear(); // Just in case ...
 
 				int bCntr = 0;
+                               	std::cout<<"---3334---";  
 		            	for(auto &conn_evque: m_conn_evque){
         	        		auto &ev_front = conn_evque.second.front();
                 			int ibrd = conn_evque.first;
+                                 	std::cout<<" iboard= "<<ibrd<<" ";
                 			if(ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd]  == trigger_n){
                         			m_conn_ev[ibrd]=ev_front;
                         			conn_evque.second.pop_front();
 						bCntr++;
+	                                 	std::cout<<ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd]<<", ";
                                         	//std::cout<<"---3334---  iboard= "<<ibrd<<std::endl;
 	                		}
         	    		}
+                              	std::cout<<std::endl;
 
                                         //std::cout<<"---3333---  ievt= "<<ievt
                                         //        <<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id + shmp->EvCntCorrFERS[brd]
@@ -712,8 +753,14 @@ void FERSProducer::RunLoop(){
                                         //std::cout<<"---3333---  trigger_id = " << trigger_n <<std::endl;
 
 	            		if(bCntr!=shmp->connectedboards) {
-        	        		EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
+        	        		//EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
+                	        	//	+" board's records instead of "+std::to_string(shmp->connectedboards) );
+        	        		EUDAQ_WARN("Event sorting failed with "+std::to_string(m_conn_ev.size())
                 	        		+" board's records instead of "+std::to_string(shmp->connectedboards) );
+					ev->Print(std::cout);
+					SendEvent(std::move(ev));
+
+					m_conn_ev.clear();
             			}else{
 
 					//std::cout<<"---3333---  ------------------------- "<<std::endl;
@@ -736,8 +783,9 @@ void FERSProducer::RunLoop(){
 						make_header(brd, FERS_pid(vhandle[brd]), &data);
         	                		// Add data here
 						//FERSpackevent(Event, DataQualifier, &data);
-						//FERSpackevent( static_cast<void*>(&m_conn_ev[brd]), DataQualifier, &data);
-						FERSpack_tspectevent(static_cast<void*>(&m_conn_ev[brd]),&data);
+						FERSpackevent( static_cast<void*>(&m_conn_ev[brd]), 1, &data);
+						//FERSpackevent(static_cast<void*>(&m_conn_ev[brd]),&data);
+						//FERSpack_tspectevent(static_cast<void*>(&m_conn_ev[brd]),&data);
 						//std::cout<<"---3333---  m_conn_ev[brd].trigger_id "<<m_conn_ev[brd].trigger_id<<std::endl;
 						//std::cout<<"---3333---  m_conn_ev[brd].tstamp_us/1000. "<<m_conn_ev[brd].tstamp_us/1000<<std::endl;
 						//std::cout<<"---3333---  data.size() "<<data.size()<<std::endl;
@@ -767,7 +815,7 @@ void FERSProducer::RunLoop(){
         	    		}//m_conn_ev.size check
 			} // Nevt
 
-
+		} // End NewData
 
 			//
 			//std::cout<<"--FERS_ReadoutStatus (0=idle, 1=running) = " << FERS_ReadoutStatus <<std::endl;
@@ -775,10 +823,34 @@ void FERSProducer::RunLoop(){
 			//std::cout<<"  --bindex = "<< std::to_string(bindex) <<" tstamp_us = "<< std::to_string(tstamp_us) <<std::endl;
 			//std::cout<<"  --DataQualifier = "<< std::to_string(DataQualifier) +" nb = "<< std::to_string(nb) <<std::endl;
 
+
+/*
+    now = std::chrono::system_clock::now();
+    now_time_t = std::chrono::system_clock::to_time_t(now);
+    now_tm = std::localtime(&now_time_t);
+
+    now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
+
+    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
+              << std::setw(3) << std::setfill('0') << now_ms.count()
+              << " end processing" << std::endl;
+*/
+
+
 			std::this_thread::sleep_until(tp_end_of_busy);
+/*
+    now = std::chrono::system_clock::now();
+    now_time_t = std::chrono::system_clock::to_time_t(now);
+    now_tm = std::localtime(&now_time_t);
 
+    now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
 
-		} // if (stair_do)
+    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
+              << std::setw(3) << std::setfill('0') << now_ms.count()
+              << " end run loop" << std::endl;
+*/
+
+		// } // if (stair_do)
 	}// while !m_exit_of_run 
 }
 //----------DOC-MARK-----END*IMP-----DOC-MARK----------
