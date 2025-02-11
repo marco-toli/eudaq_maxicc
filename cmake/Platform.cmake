@@ -15,17 +15,31 @@ if(${ROOT_FOUND})
     include(${ROOT_USE_FILE})
   endif()
   # Downgrade to C++14 if ROOT is not build with C++17 support
-  IF(ROOT_CXX_FLAGS MATCHES ".*std=c\\+\\+1[7z].*")
-    IF(NOT SUPPORT_STD_CXX17)
-      MESSAGE(FATAL_ERROR "ROOT was built with C++17 support but current compiler doesn't support it")
-    ENDIF()
-  ELSEIF(ROOT_CXX_FLAGS MATCHES ".*std=c\\+\\+1[14y].*")
-    SET(CMAKE_CXX_STANDARD 14)
-  ELSEIF(ROOT_CXX_FLAGS MATCHES ".*std=c\\+\\+.*")
-    MESSAGE(FATAL_ERROR "ROOT was built with an unsupported C++ version: ${ROOT_CXX_FLAGS}")
-  ELSE()
-    MESSAGE(FATAL_ERROR "Could not deduce ROOT's C++ version from build flags: ${ROOT_CXX_FLAGS}")
-  ENDIF()
+  #IF(ROOT_CXX_FLAGS MATCHES ".*std=c\\+\\+1[7z].*")
+  #  IF(NOT SUPPORT_STD_CXX17)
+  #    MESSAGE(FATAL_ERROR "ROOT was built with C++17 support but current compiler doesn't support it")
+  #  ENDIF()
+  #ELSEIF(ROOT_CXX_FLAGS MATCHES ".*std=c\\+\\+1[14y].*")
+  #  SET(CMAKE_CXX_STANDARD 14)
+  #ELSEIF(ROOT_CXX_FLAGS MATCHES ".*std=c\\+\\+.*")
+  #  MESSAGE(FATAL_ERROR "ROOT was built with an unsupported C++ version: ${ROOT_CXX_FLAGS}")
+  #ELSE()
+  #  MESSAGE(FATAL_ERROR "Could not deduce ROOT's C++ version from build flags: ${ROOT_CXX_FLAGS}")
+  #ENDIF()
+
+
+  # Force C++17 if supported by the compiler
+  if(SUPPORT_STD_CXX17)
+    set(CMAKE_CXX_STANDARD 17)
+    message(STATUS "Forcing C++17 standard")
+  elseif(SUPPORT_STD_CXX14)
+    set(CMAKE_CXX_STANDARD 14)
+    message(STATUS "Forcing C++14 standard")
+  else()
+    message(FATAL_ERROR "Neither C++17 nor C++14 are supported by the compiler")
+  endif()
+
+
 else()
   # Try activating the highest compiler standard available
   if(SUPPORT_STD_CXX17)
@@ -36,6 +50,8 @@ else()
     endif()
   endif()
 endif()
+
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(WIN32)

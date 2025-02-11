@@ -11,6 +11,8 @@ int main(int /*argc*/, const char **argv) {
   eudaq::Option<std::string> file_output(op, "o", "output", "", "string",
 					 "output file");
   eudaq::OptionFlag iprint(op, "ip", "iprint", "enable print of input Event");
+  eudaq::Option<uint32_t> eventh(op, "n", "eventhigh", 10000000, "uint32_t", "event number high");
+  eudaq::Option<uint32_t> eventl(op, "s", "eventlow", 0, "uint32_t", "event number low");
 
   try{
     op.Parse(argv);
@@ -29,7 +31,9 @@ int main(int /*argc*/, const char **argv) {
   std::string type_in = infile_path.substr(infile_path.find_last_of(".")+1);
   std::string type_out = outfile_path.substr(outfile_path.find_last_of(".")+1);
   bool print_ev_in = iprint.Value();
-  
+  uint32_t eventh_v = eventh.Value();  
+  uint32_t eventl_v = eventl.Value();  
+
   if(type_in=="raw")
     type_in = "native";
   if(type_out=="raw")
@@ -40,14 +44,20 @@ int main(int /*argc*/, const char **argv) {
   reader = eudaq::Factory<eudaq::FileReader>::MakeUnique(eudaq::str2hash(type_in), infile_path);
   if(!type_out.empty())
     writer = eudaq::Factory<eudaq::FileWriter>::MakeUnique(eudaq::str2hash(type_out), outfile_path);
+  int evt = 0;
   while(1){
+    evt++;
     auto ev = reader->GetNextEvent();
     if(!ev)
       break;
+    if(evt<=eventl_v)
+      continue;
     if(print_ev_in)
       ev->Print(std::cout);
     if(writer)
       writer->WriteEvent(ev);
+    if(evt>=eventh_v)
+      break;
   }
   return 0;
 }
