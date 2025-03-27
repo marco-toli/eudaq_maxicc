@@ -46,7 +46,7 @@ private:
   int PID_DRS[16];
 
   WaveDumpConfig_t   WDcfg;
-  int V4718_PID =58232;
+  int V4718_PID =58232; // yes!, hardcoded ...
   int ret, NBoardsDRS =0 ;
   uint32_t AllocatedSize, BufferSize, NumEvents;
   CAEN_DGTZ_BoardInfo_t   BoardInfo;
@@ -140,12 +140,12 @@ void DRSProducer::DoInitialise(){
 		PID_DRS[brd]=BoardInfo.SerialNumber;
 	  }
 	  m_conn_evque[brd].clear();
-	  shmp->EvCntCorrDRS[brd]=0;
+
   }
-  shmp->isEvtCntCorrDRSReady = false;
+  //shmp->isEvtCntCorrDRSReady = false;
   shmp->connectedboardsDRS = NBoardsDRS;
-  shmp->DRS_trigC = 0;
-  shmp->DRS_trigT_last = 0;
+  //shmp->DRS_trigC = 0;
+  //shmp->DRS_trigT_last = 0;
 }
 
 //----------DOC-MARK-----BEG*CONF-----DOC-MARK----------
@@ -207,11 +207,12 @@ void DRSProducer::DoConfigure(){
 
      // Load DRS factory calibration - baseline
 
+/*
      if ((ret = CAEN_DGTZ_LoadDRS4CorrectionData(vhandle[brd], WDcfg.DRS4Frequency)) != CAEN_DGTZ_Success)
          EUDAQ_INFO("DRS: Cannot LoadDRS4CorrectionData on board "+std::to_string(brd));
      if ((ret = CAEN_DGTZ_EnableDRS4Correction(vhandle[brd])) != CAEN_DGTZ_Success)
         EUDAQ_INFO("DRS: Cannot EnableDRS4Correction on board "+std::to_string(brd));
-
+*/
 
   }
   // Allocate memory for the event data and readout buffer
@@ -243,7 +244,7 @@ void DRSProducer::DoStartRun(){
   //auto tp_start_aq_duration = std::chrono::duration_cast<std::chrono::microseconds>(shmp->DRS_Aqu_start_time_us.time_since_epoch());
   //std::cout<<"---6666---  time[us] = " << tp_start_aq_duration.count() <<std::endl;
 
-  shmp->DRS_offset_us = 0;
+  //shmp->DRS_offset_us = 0;
 
   for( int brd = 0 ; brd<NBoardsDRS;brd++) {
      m_conn_evque[brd].clear();
@@ -286,7 +287,7 @@ void DRSProducer::DoStopRun(){
 
      m_conn_evque[brd].clear();
   }
-  shmp->DRS_offset_us = 0;
+  //shmp->DRS_offset_us = 0;
 
 }
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
@@ -350,27 +351,6 @@ void DRSProducer::RunLoop(){
 
     //std::cout<<"---6666---  " << shmp->FERS_offset_us<<" , "<<shmp->DRS_offset_us<<std::endl;
 
-    if(shmp->FERS_offset_us==0 && shmp->DRS_offset_us==0 ) {
-    	auto drs_fers_diff = std::chrono::duration_cast<std::chrono::microseconds> (shmp->FERS_Aqu_start_time_us - shmp->DRS_Aqu_start_time_us );
-
-	if(abs(drs_fers_diff.count())<60000000){ // 60s
-	 	EUDAQ_WARN("Global time difference (FERS - DRS) "
-			+std::to_string(drs_fers_diff.count()/1000.)+" ms");
-
-
-	//std::cout<<"---6666---  FERS - DRS diff :" << drs_fers_diff.count()<<std::endl;
-    		if(drs_fers_diff.count()<0){ // DRS started before FERS
-	        	shmp->FERS_offset_us = 0;
-		        shmp->DRS_offset_us = -drs_fers_diff.count();
-		}else{
-	        	shmp->FERS_offset_us = drs_fers_diff.count();
-		        shmp->DRS_offset_us = 0;
-    		}
-
-	}
-    }
-
-
 
     //for( int brd = 0 ; brd<ns;brd++) {
     //    CAEN_DGTZ_SendSWtrigger(vhandle[brd]);
@@ -404,17 +384,17 @@ void DRSProducer::RunLoop(){
 		//EUDAQ_INFO("DRS: EventInfo on Board " + std::to_string(*(Event742->DataGroup[0].ChSize)));
 	//	EUDAQ_INFO("DRS: Group=0, ch=0, TS=5, ADC= " + std::to_string(Event742->DataGroup[0].DataChannel[0][5]));
 	  }
-          Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter;
+          Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter; // A workaround ...
 
 	  //m_conn_evque[brd].push_back(*Event742);
 	  m_conn_evque[brd].push_back(*DRSProducer::deep_copy_event(Event742)); // Fix for shallow copy in CAEN DIgitizer
 
-          //std::cout<<"---6666---Evt, btd,  Event742->DataGroup[0].DataChannel[0][1] "
-	  //		<<i<<" , "<<brd<<" , "<<Event742->DataGroup[0].DataChannel[0][1]
-	  //		<<" , "<<Event742->DataGroup[1].TriggerTimeTag
-	  //		<<" , "<<m_conn_evque[brd].back().DataGroup[1].TriggerTimeTag
-	  //		<<" , "<<m_conn_evque[brd].front().DataGroup[1].TriggerTimeTag
-	  //		<<std::endl;
+          std::cout<<"---6666---Evt, btd,  Event742->DataGroup[0].DataChannel[0][1] "
+	  		<<i<<" , "<<brd<<" , "<<Event742->DataGroup[0].DataChannel[0][1]
+	  		<<" , "<<Event742->DataGroup[1].TriggerTimeTag
+	  		<<" , "<<m_conn_evque[brd].back().DataGroup[1].TriggerTimeTag
+	  		<<" , "<<m_conn_evque[brd].front().DataGroup[1].TriggerTimeTag
+	  		<<std::endl;
 
           //EUDAQ_INFO("Plot "+std::to_string(brd)
           //      +" , "+std::to_string(EventInfo.EventCounter)
@@ -446,30 +426,6 @@ void DRSProducer::RunLoop(){
     //std::cout<<"---6666--- Nevt "<<Nevt <<std::endl;
 
 
-    if(!shmp->isEvtCntCorrDRSReady ) {
-	if (Nevt>7 ) { // for 100 Hz trigger rate & 6 DRS boards
-		DRSProducer::make_evtCnt_corr(&m_conn_evque);
-	    	for( int brd = 0 ; brd<NBoardsDRS;brd++) {
-        	        EUDAQ_WARN("DRS: board "+std::to_string(brd)
-                	+" Local EvCntCorr "+std::to_string(shmp->EvCntCorrDRS[brd]));
-	    	}
-	}
-	Nevt = 0; // Do not send data yet
-    }
-
-
-    // Remove unmatched pre-triggers
-    if(shmp->isEvtCntCorrDRSReady&&Nevt>0&&trigger_n<200) {
-             for(auto &conn_evque: m_conn_evque){
-                     int trigger_n_ev = conn_evque.second.front().DataGroup[1].TriggerTimeTag + shmp->EvCntCorrDRS[conn_evque.first]; 
-                     if(trigger_n_ev<0) { // this is triggered before the start of the last DRS board 
-                              conn_evque.second.pop_front();  // drop it
-                              Nevt = 0;  // Do not send data yet
-                     }
-             }
-
-    }
-
     // Ready to transmit the queued events with calculate Evt# offset
     for(int ievt = 0; ievt<Nevt; ievt++) {
     	    auto ev = eudaq::Event::MakeUnique("DRSProducer");
@@ -484,7 +440,7 @@ void DRSProducer::RunLoop(){
 
             trigger_n=-1;
 	    for(auto &conn_evque: m_conn_evque){
-	        int trigger_n_ev = conn_evque.second.front().DataGroup[1].TriggerTimeTag + shmp->EvCntCorrDRS[conn_evque.first];  // DRS Ev counter is stored instead
+	        int trigger_n_ev = conn_evque.second.front().DataGroup[1].TriggerTimeTag ;  // DRS Ev counter is stored instead
 
         	if(trigger_n_ev< trigger_n||trigger_n<0)
 	          trigger_n = trigger_n_ev;
@@ -504,7 +460,7 @@ void DRSProducer::RunLoop(){
 			//<<" , "<<ev_front.DataGroup[1].TriggerTimeTag
 			//<<std::endl;
 
- 		if((ev_front.DataGroup[1].TriggerTimeTag + shmp->EvCntCorrDRS[conn_evque.first]) == trigger_n){
+ 		if((ev_front.DataGroup[1].TriggerTimeTag) == trigger_n){
       			m_conn_ev[ibrd]=ev_front;
 			conn_evque.second.pop_front();
 
@@ -521,12 +477,9 @@ void DRSProducer::RunLoop(){
 
                      if( m_flag_ts && brd==0 ){
                           auto du_ts_beg_us = std::chrono::duration_cast<std::chrono::microseconds>(shmp->DRS_Aqu_start_time_us - get_midnight_today());
-			  if (m_conn_ev[brd].DataGroup[0].TriggerTimeTag < shmp->DRS_trigT_last) shmp->DRS_trigC +=1;
-			  shmp->DRS_trigT_last = m_conn_ev[brd].DataGroup[0].TriggerTimeTag;
-			  uint64_t CTriggerTimeTag= static_cast<uint64_t>(m_conn_ev[brd].DataGroup[0].TriggerTimeTag)+static_cast<uint64_t>(shmp->DRS_trigC)*(static_cast<uint64_t>(1) << 30);
+			  uint64_t CTriggerTimeTag= static_cast<uint64_t>(m_conn_ev[brd].DataGroup[0].TriggerTimeTag);
                           auto tp_trigger0 = std::chrono::microseconds(static_cast<long int>(CTriggerTimeTag/TTimeTag_calib/2.));
                           du_ts_beg_us += tp_trigger0;
-                          //std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
                           std::chrono::microseconds du_ts_end_us(du_ts_beg_us + m_us_evt_length);
                           ev->SetTimestamp(static_cast<uint64_t>(du_ts_beg_us.count()), static_cast<uint64_t>(du_ts_end_us.count()));
                           //std::cout<<"---6666--- du_ts_beg_us "<<du_ts_beg_us.count()/1000000
@@ -541,86 +494,30 @@ void DRSProducer::RunLoop(){
 	    	     //ev->SetTriggerN(trigger_n);
 		     make_header(brd, PID_DRS[brd], &data);
 		     // Add data here
-                     DRSpack_event(static_cast<void*>(&m_conn_ev[brd]),&data);
+		     DRSpack_event(static_cast<void*>(&m_conn_ev[brd]),&data);
 
 	    	     ev->AddBlock(m_plane_id+brd, data);
-		}
+		} // loop over boards
+
           	//EUDAQ_INFO("Sending Ev");
 
 
 	    	SendEvent(std::move(ev));
                 m_conn_ev.clear();
-	    }
+	    } // if complete event with data from all boards
 
 
-    }
+    }// loop over all collected events in the transfer
 
 
     std::this_thread::sleep_until(tp_end_of_busy);
 
-  }
+  } // end   while(!m_exit_of_run){
+
 }
 //----------DOC-MARK-----END*IMP-----DOC-MARK----------
 
 
-
-void DRSProducer::make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>>* m_conn_evque) {
-    if (m_conn_evque == nullptr) {
-        // Handle null pointer
-        return;
-    }else{
-
-	auto it = m_conn_evque->find(0);
-    	std::deque<CAEN_DGTZ_X742_EVENT_t>& eventDeque = it->second;
-
-	std::vector<double> EvT;
-	EvT.reserve(eventDeque.size()); // Reserve memory for efficiency
-	for (const auto& event : eventDeque) {
-    		EvT.push_back(static_cast<double>(event.DataGroup[0].TriggerTimeTag));
-	}
-
-        for(int brd = 0; brd<NBoardsDRS;brd++){
-                int matching_index = -1;
-
-		auto it = m_conn_evque->find(brd);
-	    	std::deque<CAEN_DGTZ_X742_EVENT_t>& eventDeque = it->second;
- 	        std::vector<double> TrigTime;
-		TrigTime.reserve(eventDeque.size());
-	        for (const auto& event : eventDeque) {
-	                TrigTime.push_back(static_cast<double>(event.DataGroup[0].TriggerTimeTag));
-       		}
-
-		if(TrigTime.size()<1)return;
-
-
-                for (size_t idx = 0; idx < EvT.size(); idx++) {
-                        double value = EvT[idx]/TTimeTag_calib/1000./2.;   // in millisecond
-                        for (double df_value : TrigTime) {
-                                double tmp_value = df_value/TTimeTag_calib/1000./2.+ 12. * (brd); // in millisecond, 58.594 MHz clock
-				//std::cout<<"---0000--- brd = " << brd <<std::endl;
-				//std::cout<<"---0000--- value - tmp_value = " << value - tmp_value <<std::endl;
-                                if (std::abs(value - tmp_value) <= 0.3) {// in millisecond - good for ~3kHz trigger
-                                        matching_index = idx;
-                                        break;
-                                }
-                        }
-                        if (matching_index != -1) {
-                                shmp->EvCntCorrDRS[brd]=matching_index;
-                                break;
-                        }
-                }
-		if (matching_index<0)
-			EUDAQ_THROW("Unable to sync DRS modles due to excessive time jitter - restart the DAQ! ");
-        }
-
-	int max_value = *std::max_element(shmp->EvCntCorrDRS, shmp->EvCntCorrDRS + NBoardsDRS);
-	for(int brd = 0; brd<NBoardsDRS;brd++)
-		 shmp->EvCntCorrDRS[brd]-=max_value;
-
-        shmp->isEvtCntCorrDRSReady = true;
-    }
-    return;
-}
 
 CAEN_DGTZ_X742_EVENT_t* DRSProducer::deep_copy_event(const CAEN_DGTZ_X742_EVENT_t *src) {
     // Allocate memory for the new event

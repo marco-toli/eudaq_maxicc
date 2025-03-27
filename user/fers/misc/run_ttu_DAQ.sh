@@ -6,7 +6,7 @@ killall -9 euCliMonitor
 killall -9 euLog
 killall -9 euRun
 
-BINPATH=/home/daq/eudaq_rino/bin
+BINPATH=/home/daq/eudaq_dev/bin
 
 $BINPATH/euRun &
 sleep 1
@@ -26,4 +26,7 @@ sleep 1
 
 
 $BINPATH/euCliProducer -n DRSProducer -t my_drs0 &
+sleep 1
+
+$BINPATH/euCliProducer -n QTPDProducer -t my_qtp0 &
 

@@ -641,7 +641,7 @@ void initshm( int shmid )
 		shmp->HVbias[i]=0;
 		shmp->handle[i]=0;
 		shmp->nchannels[i] = FERSLIB_MAX_NCH; // 64
-		shmp->AcquisitionMode[i] = 0;
+		//shmp->AcquisitionMode[i] = 0;
 		memset(shmp->IP       [i], '\0', MAXCHAR);
 		//memset(shmp->desc     [i], '\0', MAXCHAR);
 		//memset(shmp->location [i], '\0', MAXCHAR);
@@ -662,12 +662,12 @@ void openasciistream(shmseg* shmp, int brd){
 	asciiheader[ DTQ_STAIRCASE ] = "#rateHz,hitcnt[]"      ;
 
 	EUDAQ_INFO("openasciistream called for board "+std::to_string(brd));
-	int a = shmp->AcquisitionMode[brd];
+	//int a = shmp->AcquisitionMode[brd];
 	std::fstream readme;
 	readme.open("readme_test.txt",std::ios::out);
 	readme<<"board: "<< brd << std::endl;
-	readme<<"AcquisitionMode: "<< a <<std::endl;
-	readme<<"header of ascii file: "<< asciiheader[a] <<std::endl;
+	//readme<<"AcquisitionMode: "<< a <<std::endl;
+	//readme<<"header of ascii file: "<< asciiheader[a] <<std::endl;
 	//readme<<"desc: "<< shmp->desc[brd] << std::endl;
 	//readme<<"location:"<< shmp->location[brd] << std::endl;
 	readme<<"IP:"<< shmp->IP[brd] << std::endl;

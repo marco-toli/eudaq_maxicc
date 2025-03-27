@@ -31,19 +31,13 @@ struct shmseg {
         int connectedboards = 0; // number of connected FERS boards
         int nchannels[MAX_NBRD];
         int handle[MAX_NBRD]; // handle is given by FERS_OpenDevice()
-        int AcquisitionMode[MAX_NBRD];
-        //from ini file:
         char IP[MAX_NBRD][MAXCHAR]; // IP address
-        //char desc[MAX_NBRD][MAXCHAR]; // for example serial number
-        //char location[MAX_NBRD][MAXCHAR]; // for instance "on the scope"
         char producer[MAX_NBRD][MAXCHAR]; // title of producer
-        // from conf file:
         float HVbias[MAX_NBRD]; // HV bias
         char collector[MAX_NBRD][MAXCHAR]; // title of data collector
         // from methods:
-        int EvCntCorrFERS[MAX_NBRD] = {-1}; // DRS correction for event Cnt missmatch
         std::chrono::high_resolution_clock::time_point FERS_Aqu_start_time_us ;
-	int FERS_offset_us = 0;
+	//int FERS_offset_us = 0;
 	// FERS monitoring
 	float tempFPGA[MAX_NBRD];
         float hv_Vmon[MAX_NBRD];
@@ -53,14 +47,11 @@ struct shmseg {
 
         // DRS
         int connectedboardsDRS = 0; // number of connected DRS boards
-        int EvCntCorrDRS[MAX_NBRD]= {-1} ; // DRS correction for event Cnt missmatch
         std::chrono::high_resolution_clock::time_point DRS_Aqu_start_time_us ;
-	int DRS_offset_us = 0;
-	int DRS_trigC = 0;
-	uint32_t DRS_trigT_last = 0;
 
-        bool isEvtCntCorrFERSReady ;
-        bool isEvtCntCorrDRSReady ;
+        // QTP
+        int connectedboardsQTP = 0; // number of connected QTP boards
+
 };
 
 std::chrono::time_point<std::chrono::high_resolution_clock> get_midnight_today();

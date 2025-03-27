@@ -35,13 +35,6 @@ Config_t WDcfg;
 struct shmseg *shmp;
 int shmid;
 
-//#include<sys/ipc.h>
-//#include<sys/shm.h>
-//#include<sys/types.h>
-//#define SHM_KEY 0x1234
-//struct shmseg {
-//	int connectedboards = 0;
-//};
 
 //----------DOC-MARK-----BEG*DEC-----DOC-MARK----------
 class FERSProducer : public eudaq::Producer {
@@ -54,7 +47,6 @@ class FERSProducer : public eudaq::Producer {
 		void DoTerminate() override;
 		void DoReset() override;
 		void RunLoop() override;
-		void make_evtCnt_corr(std::map<int, std::deque<SpectEvent_t>>* m_conn_evque);
 
 		static const uint32_t m_id_factory = eudaq::cstr2hash("FERSProducer");
 
@@ -198,7 +190,7 @@ void FERSProducer::DoInitialise(){
 							+"*"+std::string(shmp->producer[shmp->connectedboards])
 						);
 						m_conn_evque[shmp->connectedboards].clear();
-						shmp->EvCntCorrFERS[shmp->connectedboards]=0;
+						//shmp->EvCntCorrFERS[shmp->connectedboards]=0;
 						shmp->connectedboards++;
 					}else{
 		   				EUDAQ_THROW("Bords at "+std::string(tmp_path)
@@ -212,57 +204,11 @@ void FERSProducer::DoInitialise(){
 	}
 
 
-	shmp->isEvtCntCorrFERSReady = false;
+	//shmp->isEvtCntCorrFERSReady = false;
 
 
-
-
-
-
-	//EUDAQ_INFO("ret= "+std::to_string(ret)
-	//		+" WDcfg.NumBrd "+std::to_string(WDcfg.NumBrd)
-	//	  );
-
-	//if(ret == 0){
-		//std::cout <<"Connected to: "<< connection_path<<std::endl;
-		//vhandle[WDcfg.NumBrd] = handle;
-		//brd=shmp->connectedboards;
-		//shmp->connectedboards++;
-		//shmp->handle[brd] = handle;
-		//WDcfg.NumBrd++;
-	//} else
-		//EUDAQ_THROW("unable to connect to fers with ip address: "+ fers_ip_address);
-
-	// Readout Mode
-	// 0	// Disable sorting
-	// 1	// Enable event sorting by Trigger Tstamp
-	// 2	// Enable event sorting by Trigger ID
-	//int ROmode = ini->Get("FERS_RO_MODE",0);
-	//int allocsize;
-	//FERS_InitReadout(handle,ROmode,&allocsize);
-	//FERS_InitReadout(vhandle,ROmode,&allocsize);
-
-	// fill shared struct
-	//std::string fers_prodid = ini->Get("FERS_PRODID","no prod ID";
-	//strcpy(shmp->IP[brd],       fers_ip_address.c_str());
-	//strcpy(shmp->desc[brd],     std::to_string(FERS_pid(handle)).c_str());
-	//strcpy(shmp->location[brd], fers_id.c_str());
-	//strcpy(shmp->producer[brd], fers_prodid.c_str());
-
-	//std::cout <<" ------- RINO ----------   "<<fers_ip_address
-	//	<<" handle "<<handle
-	//	<<" ROmode "<<ROmode<<"  allocsize "<<allocsize
-	//	<<" Connected to: "<< connection_path
-	//	<< " "<<fers_id<<std::endl;
 	EUDAQ_WARN("DT5215: # connected boards is "+std::to_string(shmp->connectedboards)
 		  );
-//	EUDAQ_WARN("check shared on board "+std::to_string(brd)+": "
-//			+std::string(shmp->IP[brd])
-//			+"*"+std::string(shmp->desc[brd])
-//			+"*"+std::string(shmp->location[brd])
-//			+"*"+std::string(shmp->producer[brd])
-//		  );
-
 }
 
 //----------DOC-MARK-----BEG*CONF-----DOC-MARK----------
@@ -343,10 +289,10 @@ void FERSProducer::DoConfigure(){
 			shmp->HVbias[brd] = fers_hv_vbias;
 			std::string temp=conf->Get("EUDAQ_DC","no data collector");
 			strcpy(shmp->collector[brd],temp.c_str());
-			shmp->AcquisitionMode[brd] = WDcfg.AcquisitionMode;
+			//shmp->AcquisitionMode[brd] = WDcfg.AcquisitionMode;
 			EUDAQ_WARN("check shared in board "+std::to_string(brd)
 			+": HVbias = "+std::to_string(shmp->HVbias[brd])+" collector="+std::string(shmp->collector[brd])
-			+" acqmode="+std::to_string(shmp->AcquisitionMode[brd]));
+			+" acqmode="+std::to_string(WDcfg.AcquisitionMode));
 			sleep(1);
 			HV_Set_OnOff(shmp->handle[brd], 1); // set HV on
 		} else {
@@ -377,7 +323,6 @@ void FERSProducer::DoStartRun(){
   //auto tp_start_aq_duration = std::chrono::duration_cast<std::chrono::microseconds>(shmp->FERS_Aqu_start_time_us.time_since_epoch());
   //std::cout<<"---3333---  time[us] = " << tp_start_aq_duration.count() <<std::endl;
 
-  shmp->FERS_offset_us = 0;
 
 	// here the hardware is told to startup
         for(brd =0; brd < shmp->connectedboards; brd++) { // loop over boards
@@ -388,6 +333,13 @@ void FERSProducer::DoStartRun(){
 
 	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
+
+	sleep(3);
+	for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+		FERS_WriteRegister(shmp->handle[brd], a_t1_out_mask, 1);
+	}
+	EUDAQ_INFO("FERS: Trigger Veto is off");
+
 }
 
 //----------DOC-MARK-----BEG*STOP-----DOC-MARK----------
@@ -398,7 +350,6 @@ void FERSProducer::DoStopRun(){
 		m_conn_evque[brd].clear();
 	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
-        shmp->FERS_offset_us = 0;
 }
 
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
@@ -454,129 +405,6 @@ void FERSProducer::RunLoop(){
 	int newData =0; 
 	while(!m_exit_of_run){
 
-/*
-		// staircase?
-		static bool stairdone = false;
-
-		if (stair_do) // Check if it works with DT5215 ...
-		{
-
-			std::vector<uint8_t> hit(x_pixel*y_pixel, 0);
-			hit[position(gen)] = signal(gen);
-
-			int nchan = x_pixel*y_pixel;
-			int DataQualifier = -1;
-			void *Event;
-
-
-
-			if (!stairdone)
-			{
-				uint32_t Q_DiscrMask0 = 0xFFFFFFFF;
-				uint32_t Q_DiscrMask1 = 0xFFFFFFFF;
-				uint32_t Tlogic_Mask0 = 0xFFFFFFFF;
-				uint32_t Tlogic_Mask1 = 0xFFFFFFFF;
-				float HV;
-				HV_Get_Vbias( handle, &HV);
-				std::cout<<"handle           :"<< handle           << std::endl;
-				std::cout<<"stair_shapingt   :"<< stair_shapingt   << std::endl;
-				std::cout<<"stair_start      :"<< stair_start      << std::endl;
-				std::cout<<"stair_stop       :"<< stair_stop       << std::endl;
-				std::cout<<"stair_step       :"<< stair_step       << std::endl;
-				std::cout<<"stair_dwell_time :"<< stair_dwell_time << std::endl;
-				std::cout<<"HV               :"<< HV               << std::endl;
-
-				StaircaseEvent_t StaircaseEvent;
-				std::vector<uint8_t> data;
-
-				int i, s, board;
-				uint32_t thr;
-				uint32_t hitcnt[FERSLIB_MAX_NCH], Tor_cnt, Qor_cnt;
-
-				board = FERS_INDEX(handle);
-				uint16_t nstep = (stair_stop - stair_start)/stair_step + 1;
-				float dwell_s = (float)stair_dwell_time / 1000;
-				std::cout<<"dwell_s :"<< dwell_s << std::endl;
-
-				FERS_WriteRegister(handle, a_acq_ctrl, ACQMODE_COUNT);
-				FERS_WriteRegisterSlice(handle, a_acq_ctrl, 27, 29, 0);  // Set counting mode = singles
-				FERS_WriteRegister(handle, a_dwell_time, (uint32_t)(dwell_s * 1e9 / CLK_PERIOD)); 
-				FERS_WriteRegister(handle, a_qdiscr_mask_0, Q_DiscrMask0); 
-				FERS_WriteRegister(handle, a_qdiscr_mask_1, Q_DiscrMask1);  
-				FERS_WriteRegister(handle, a_tdiscr_mask_0, Tlogic_Mask0);  
-				FERS_WriteRegister(handle, a_tdiscr_mask_1, Tlogic_Mask1);  
-				FERS_WriteRegister(handle, a_citiroc_cfg, 0x00070f20); // Q-discr direct (not latched)
-				FERS_WriteRegister(handle, a_lg_sh_time, stair_dwell_time); // Shaping Time LG
-				FERS_WriteRegister(handle, a_hg_sh_time, stair_dwell_time); // Shaping Time HG
-				FERS_WriteRegister(handle, a_trg_mask, 0x1); // SW trigger only
-				FERS_WriteRegister(handle, a_t1_out_mask, 0x10); // PTRG (for debug)
-				FERS_WriteRegister(handle, a_t0_out_mask, 0x04); // T-OT (for debug)
-
-				// Start Scan
-				Sleep(100);
-				std::cout<< "            --------- Rate (cps) ---------"<<std::endl;
-				std::cout<< " Adv  Thr     ChMean       T-OR       Q-OR"<<std::endl;
-				for(s = nstep; s >= 0; s--) {
-
-					thr = stair_start + s * stair_step;
-					FERS_WriteRegister(handle, a_qd_coarse_thr, thr);	// Threshold for Q-discr
-					FERS_WriteRegister(handle, a_td_coarse_thr, thr);	// Threshold for T-discr
-					FERS_WriteRegister(handle, a_scbs_ctrl, 0x000);		// set citiroc index = 0
-					FERS_SendCommand(handle, CMD_CFG_ASIC);
-					FERS_WriteRegister(handle, a_scbs_ctrl, 0x200);		// set citiroc index = 1
-					FERS_SendCommand(handle, CMD_CFG_ASIC);
-					Sleep(500);
-					FERS_WriteRegister(handle, a_trg_mask, 0x20); // enable periodic trigger
-					FERS_SendCommand(handle, CMD_RES_PTRG);  // Reset period trigger counter and count for dwell time
-					Sleep((int)(dwell_s/1000 + 200));  // wait for a complete dwell time (+ margin), then read counters
-					FERS_ReadRegister(handle, a_t_or_cnt, &Tor_cnt);
-					FERS_ReadRegister(handle, a_q_or_cnt, &Qor_cnt);
-					if (s < nstep) {  // skip 1st pass 
-						uint64_t chmean = 0;
-						for(i=0; i<FERSLIB_MAX_NCH; i++) {
-							FERS_ReadRegister(handle, a_hitcnt + (i << 16), &hitcnt[i]);
-							chmean += (uint64_t)hitcnt[i];
-
-							// fill structure
-							StaircaseEvent.hitcnt[i] = hitcnt[i];
-						}
-						chmean /= FERSLIB_MAX_NCH;
-						int perc = (100 * (nstep-s)) / nstep;
-						if (perc > 100) perc = 100;
-						std::cout<< perc <<" "<< thr <<" "<< chmean/dwell_s <<" "<< Tor_cnt/dwell_s <<" "<< Qor_cnt/dwell_s <<std::endl;
-
-						// fill structure
-						StaircaseEvent.threshold = (uint16_t)thr;
-						StaircaseEvent.shapingt = stair_shapingt;
-						StaircaseEvent.dwell_time = stair_dwell_time;
-						StaircaseEvent.chmean = (uint32_t)chmean;
-						StaircaseEvent.HV = (uint32_t)(1000*HV);
-						StaircaseEvent.Tor_cnt = Tor_cnt;
-						StaircaseEvent.Qor_cnt = Qor_cnt;
-
-
-						Event = (void*)(&StaircaseEvent);
-						//make_header(handle, x_pixel, y_pixel, DTQ_STAIRCASE, &data);
-						make_header(brd, DTQ_STAIRCASE, &data);
-						FERSpackevent(Event, DTQ_STAIRCASE, &data);
-
-
-						uint32_t block_id = (nstep-1) - s; // starts at 0
-						ev->AddBlock(block_id, data);
-
-						std::this_thread::sleep_until(tp_end_of_busy);
-					}
-				}
-				stairdone = true;
-				SendEvent(std::move(ev));
-
-			} else {
-				FERSProducer::DoStopRun(); // just run once
-				EUDAQ_INFO("Producer > staircase event sent");
-				EUDAQ_WARN("*** *** PLEASE STOP THE RUN *** ***");
-			}
-		} else { // not staircase
-*/
 
 			auto tp_trigger = std::chrono::steady_clock::now();
 			auto tp_end_of_busy = tp_trigger + m_ms_busy;
@@ -619,12 +447,12 @@ void FERSProducer::RunLoop(){
 					//	<<" DataQualifier= "<<DataQualifier
 					//	<<std::endl;
 				//if (status>1) break;
-				if (DataQualifier>0) {
-					std::cout<<"---3333--- DataQualifier = "<<DataQualifier
-					<<" nb = "<<nb
-					<<" status = "<<status
-					<<std::endl;
-				}
+				//if (DataQualifier>0) {
+				//	std::cout<<"---3333--- DataQualifier = "<<DataQualifier
+				//	<<" nb = "<<nb
+				//	<<" status = "<<status
+				//	<<std::endl;
+				//}
 				if (DataQualifier==DTQ_SERVICE){  // Service event
                                 	ServEvent_t* Ev = (ServEvent_t*)Event;
 					shmp->tempFPGA[bindex]=Ev->tempFPGA;
@@ -637,7 +465,7 @@ void FERSProducer::RunLoop(){
 				}
 				//if(nb>0&&DataQualifier==19) { // Data event in Spec + Time mode
 				if(nb>0&&DataQualifier==17) { // Data event in Spec 
-					newData++;
+					newData++; // data - events*boards
 					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
 					m_conn_evque[bindex].push_back(*EventSpect);
 
@@ -656,7 +484,7 @@ void FERSProducer::RunLoop(){
 					//	<<" energyLG[1] = "<<EventSpect->energyLG[1]
 					//	<<" nb= "<<nb<<std::endl;
 				}
-			}
+			} // end of - read all data from the boards
 /*
     now = std::chrono::system_clock::now();
     now_time_t = std::chrono::system_clock::to_time_t(now);
@@ -669,39 +497,17 @@ void FERSProducer::RunLoop(){
               << " end reading" << std::endl;
 */
 
-		if( newData >= shmp->connectedboards) {
+		if( newData >= shmp->connectedboards) {  // if evt*boards >= boards, i.e. at least one complete event candidate
 			newData=0;
-    			int Nevt = 512;
+    			int Nevt = 1000;
 
-			// check if there is enough DRS data to asample an event 
-    			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+			// check if there is enough FERS data to asample an event
+			// Find the min number of events that could be assambled - Nevt
+    			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {  
                 		int qsize = m_conn_evque[brd].size();
                			if( qsize < Nevt) Nevt = qsize;
     			}
 
-			// Calculate the event missalighnment 
-			if(!shmp->isEvtCntCorrFERSReady ) {
-				if( Nevt > 14 ){
-	        			FERSProducer::make_evtCnt_corr(&m_conn_evque);
-				        for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
-						EUDAQ_WARN("FERS: board "+std::to_string(brd)
-						+" Local EvCntCorr "+std::to_string(shmp->EvCntCorrFERS[brd]));
-        				}
-				}
-				Nevt = 0; 
-    			}
-
-			// Remove unmatched pre-triggers
-			if(shmp->isEvtCntCorrFERSReady&&Nevt>0&&trigger_n<300) {
-        	                for(auto &conn_evque: m_conn_evque){
-	                                int trigger_n_ev = conn_evque.second.front().trigger_id+shmp->EvCntCorrFERS[conn_evque.first];
-                        	        if(trigger_n_ev<0) {
-						conn_evque.second.pop_front();
-						Nevt = 0;
-					}
-	                       }
-
-			}
 
 			// Ready to transmit the queued events with calculate Evt# offset
 			for(int ievt = 0; ievt<Nevt; ievt++) {
@@ -710,14 +516,10 @@ void FERSProducer::RunLoop(){
 				ev->SetTag("Plane ID", std::to_string(m_plane_id));
 
 	            		trigger_n=-1;
-        	    		for(auto &conn_evque: m_conn_evque){
-                			int trigger_n_ev = conn_evque.second.front().trigger_id + shmp->EvCntCorrFERS[conn_evque.first];  // Ev counter
-					if(trigger_n_ev<0) {
-						conn_evque.second.pop_front();
-					}else{
-        	        			if(trigger_n_ev< trigger_n||trigger_n<0)
-                	  				trigger_n = trigger_n_ev;
-					}
+        	    		for(auto &conn_evque: m_conn_evque){ // find the min trigger cnt in the queue
+                			int trigger_n_ev = conn_evque.second.front().trigger_id ;  // Ev counter
+       	        			if(trigger_n_ev< trigger_n||trigger_n<0)
+               	  				trigger_n = trigger_n_ev;
 				}
 
 				if(m_flag_tg)
@@ -729,16 +531,16 @@ void FERSProducer::RunLoop(){
 
 				int bCntr = 0;
                                	std::cout<<"---3334---";  
+				// assemble one event with same trig count for all boards
 		            	for(auto &conn_evque: m_conn_evque){
         	        		auto &ev_front = conn_evque.second.front();
                 			int ibrd = conn_evque.first;
                                  	std::cout<<" iboard= "<<ibrd<<" ";
-                			if(ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd]  == trigger_n){
+                			if(ev_front.trigger_id == trigger_n){
                         			m_conn_ev[ibrd]=ev_front;
                         			conn_evque.second.pop_front();
 						bCntr++;
-	                                 	std::cout<<ev_front.trigger_id + shmp->EvCntCorrFERS[ibrd]<<", ";
-                                        	//std::cout<<"---3334---  iboard= "<<ibrd<<std::endl;
+	                                 	std::cout<<ev_front.trigger_id <<", ";
 	                		}
         	    		}
                               	std::cout<<std::endl;
@@ -752,9 +554,11 @@ void FERSProducer::RunLoop(){
 
                                         //std::cout<<"---3333---  trigger_id = " << trigger_n <<std::endl;
 
-	            		if(bCntr!=shmp->connectedboards) {
+	            		if(bCntr!=shmp->connectedboards) {  // check for missing data from some of the FERS boards
+
         	        		//EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
                 	        	//	+" board's records instead of "+std::to_string(shmp->connectedboards) );
+
         	        		EUDAQ_WARN("Event sorting failed with "+std::to_string(m_conn_ev.size())
                 	        		+" board's records instead of "+std::to_string(shmp->connectedboards) );
 					ev->Print(std::cout);
@@ -762,7 +566,7 @@ void FERSProducer::RunLoop(){
 
 					m_conn_ev.clear();
             			}else{
-
+					// If all boards provided data - send the event
 					//std::cout<<"---3333---  ------------------------- "<<std::endl;
                 			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
 						if( m_flag_ts && brd==0 ){
@@ -774,10 +578,6 @@ void FERSProducer::RunLoop(){
 							ev->SetTimestamp(static_cast<uint64_t>(du_ts_beg_us.count()), static_cast<uint64_t>(du_ts_end_us.count()));
 							//std::cout<<"---3333--- du_ts_beg_us "<<du_ts_beg_us.count()<<" du_ts_end_us "<<du_ts_end_us.count()<<std::endl;
 						}
-						//if(brd==2)
-						//std::cout<<"---3333---  send trig id = "<<m_conn_ev[brd].trigger_id
-						//	<<" energyLG[3] = "<<m_conn_ev[brd].energyLG[3]
- 						//	<<std::endl;
 
                         			std::vector<uint8_t> data;
 						make_header(brd, FERS_pid(vhandle[brd]), &data);
@@ -810,7 +610,7 @@ void FERSProducer::RunLoop(){
 					//ev->Print(std::cout);
 					SendEvent(std::move(ev));
 
-					m_conn_ev.clear();
+					m_conn_ev.clear(); // clear single-event buffer
 
         	    		}//m_conn_ev.size check
 			} // Nevt
@@ -838,73 +638,8 @@ void FERSProducer::RunLoop(){
 
 
 			std::this_thread::sleep_until(tp_end_of_busy);
-/*
-    now = std::chrono::system_clock::now();
-    now_time_t = std::chrono::system_clock::to_time_t(now);
-    now_tm = std::localtime(&now_time_t);
 
-    now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
-
-    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
-              << std::setw(3) << std::setfill('0') << now_ms.count()
-              << " end run loop" << std::endl;
-*/
-
-		// } // if (stair_do)
 	}// while !m_exit_of_run 
 }
 //----------DOC-MARK-----END*IMP-----DOC-MARK----------
 
-void FERSProducer::make_evtCnt_corr(std::map<int, std::deque<SpectEvent_t>>* m_conn_evque) {
-    if (m_conn_evque == nullptr) {
-        // Handle null pointer
-        return;
-    }else{
-
-        auto it = m_conn_evque->find(0);
-        std::deque<SpectEvent_t>& eventDeque = it->second;
-
-        std::vector<double> EvT;
-        EvT.reserve(eventDeque.size()); // Reserve memory for efficiency
-        for (const auto& event : eventDeque) {
-                EvT.push_back(static_cast<double>(event.tstamp_us));
-        }
-
-        for(int brd = 0; brd<shmp->connectedboards;brd++){
-                int matching_index = -1;
-
-                auto it = m_conn_evque->find(brd);
-                std::deque<SpectEvent_t>& eventDeque = it->second;
-                std::vector<double> TrigTime;
-                TrigTime.reserve(eventDeque.size());
-                for (const auto& event : eventDeque) {
-                        TrigTime.push_back(static_cast<double>(event.tstamp_us));
-                }
-
-		if(TrigTime.size()<1)return;
-
-                for (size_t idx = 0; idx < EvT.size(); idx++) {
-                        double value = EvT[idx] ; // in microseconds
-                        for (double df_value : TrigTime) {
-                                double tmp_value = df_value + 10130 * (brd); // in microseconds
-                                if (std::abs(value - tmp_value) <= 333) { // in microseconds
-                                        matching_index = idx;
-                                        break;
-                                }
-                        }
-                        if (matching_index != -1) {
-                                shmp->EvCntCorrFERS[brd]=matching_index;
-                                break;
-                        }
-                }
-        }
-
-        int max_value = *std::max_element(shmp->EvCntCorrFERS, shmp->EvCntCorrFERS + shmp->connectedboards);
-        for(int brd = 0; brd<shmp->connectedboards;brd++)
-                 shmp->EvCntCorrFERS[brd]-=max_value;
-
-
-        shmp->isEvtCntCorrFERSReady = true;
-    }
-    return;
-}

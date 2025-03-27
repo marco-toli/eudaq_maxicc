@@ -4,6 +4,7 @@
 #include "FERSlib.h"
 #include "FERS_EUDAQ.h"
 #include "DRS_EUDAQ.h"
+#include "QTP_EUDAQ.h"
 
 #include "TH1.h"
 #include "TH2.h"
@@ -35,15 +36,14 @@ public:
   static const uint32_t m_id_factory = eudaq::cstr2hash("FERSROOTMonitor");
 
 private:
-  int brd1[16] = {1,3,5,7,9,11,13,15,33,35,37,39,41,43,45,47};
+  //int brd1[16] = {1,3,5,7,9,11,13,15,33,35,37,39,41,43,45,47};
   TH1D* m_FERS_LG_Ch_ADC[16][64];
   TH1D* m_FERS_HG_Ch_ADC[16][64];
-  //TH1D* m_FERS_ToA_Ch_ADC[16][64];
-  //TH1D* m_FERS_ToT_Ch_ADC[16][64];
 
-
-  //TH1D* m_FERS_HG_Ch_ADC1[16];
   TProfile* m_DRS_Pulse_Ch[8][32];
+
+  TH1D* m_QDC_ADC[8][32]; // 8 possible boards with 32 channels
+
 
   TH1D* m_FERS_tempFPGA;
   TH1D* m_FERS_hv_Vmon;
@@ -124,21 +124,24 @@ void FERSROOTMonitor::AtConfiguration(){
 		sprintf (sname,"h_Board%02d_HG_ADC_Ch%02d",i,ich);
 		m_FERS_HG_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
 			"HG ADC;ADC;# evt", 4096, 0., 8192.);
-/*
-		sprintf (hname,"FERS/Board_%02d_ToA/ADC_Ch%02d",i,ich);
-		sprintf (tname,"Board %02d ToA_ADC_Ch%02d",i,ich);
-		sprintf (sname,"h_Board%02d_ToA_ADC_Ch%02d",i,ich);
-		m_FERS_ToA_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
-			"ToA ADC;ADC;# evt", 1000, 0., 500.);
-
-		sprintf (hname,"FERS/Board_%02d_ToT/ADC_Ch%02d",i,ich);
-		sprintf (tname,"Board %02d ToT_ADC_Ch%02d",i,ich);
-		sprintf (sname,"h_Board%02d_ToT_ADC_Ch%02d",i,ich);
-		m_FERS_ToT_Ch_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
-			"ToT ADC;ADC;# evt", 400, 0., 200.);
-*/
 	}
   }
+
+  for(int i=0;i<shmp->connectedboardsQTP;i++) {
+  //for(int i=0;i<1;i++) {
+	for(int ich=0;ich<32;ich++) {
+		char hname[256];
+		char tname[256];
+		char sname[256];
+		sprintf (hname,"QDC/Board_%02d/ADC_Ch%02d",i,ich);
+		sprintf (tname,"Board %02d ADC_Ch%02d",i,ich);
+		sprintf (sname,"h_Board%02d_ADC_Ch%02d",i,ich);
+		m_QDC_ADC[i][ich] =  m_monitor->Book<TH1D>(hname,tname , sname,
+			"ADC;ADC;# of evt", 2048, 0., 65536.);
+
+	}
+  }
+
   for(int i=0;i<shmp->connectedboardsDRS;i++) {
         char hname[256];
 	char tname[256];
@@ -250,6 +253,33 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 						}
 					}
 				}
+			}
+
+		}else if(ev_sub->GetDescription()=="QTPDProducer"){  //Decode QTP
+			trigTime[0]=ev_sub->GetTimestampBegin()/1000;
+			auto block_n_list = ev_sub->GetBlockNumList();
+			uint16_t ADCdata[32];
+			for(auto &block_n: block_n_list){
+		                std::vector<uint8_t> block = ev_sub->GetBlock(block_n);
+				int index = read_header(&block, &brd, &PID);
+				std::vector<uint8_t> data(block.begin()+index, block.end());
+
+				//std::cout<<"---7777--- block.size() = "<<block.size()<<std::endl;
+				//std::cout<<"---7777--- data.size() = "<<data.size()<<std::endl;
+				//std::cout<<"---7777--- brd = "<<brd<<std::endl;
+				//std::cout<<"---7777--- PID = "<<PID<<std::endl;
+
+				 QTPunpack_event(&data, ADCdata);
+
+
+                                for (int i=0; i<32; i++)
+                                {
+					m_QDC_ADC[brd][i]->Fill(ADCdata[i]);
+                                }
+
+
+
+
 			}
 
 		}else { // Decode Beam elements (to be included later)

@@ -39,7 +39,7 @@ POST_TRIGGER  50
 #PULSE_POLARITY: input signal polarity.
 #options: POSITIVE, NEGATIVE
 #
-PULSE_POLARITY  POSITIVE
+PULSE_POLARITY  NEGATIVE
 
 # EXTERNAL_TRIGGER: external trigger input settings. When enabled, the ext. trg. can be either 
 # propagated (ACQUISITION_AND_TRGOUT) or not (ACQUISITION_ONLY) through the TRGOUT
