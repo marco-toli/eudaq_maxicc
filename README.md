@@ -8,6 +8,11 @@ make -j 10 install
 
 ```
 
+Comunication to a Scope requires VISA
+```
+apt install ni-visa
+apt install ni-visa-devel
+```
 
 EUDAQ version 2
 =====
