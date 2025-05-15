@@ -25,7 +25,7 @@
 
 
 #define SHM_KEY 0x12345
-#define MAXCHAR 27 // max size of chars in following struct. DON'T MAKE IT TOO BIG!!!
+#define MAXCHAR 25 // max size of chars in following struct. DON'T MAKE IT TOO BIG!!!
 struct shmseg {
         // FERS
         int connectedboards = 0; // number of connected FERS boards
@@ -48,6 +48,7 @@ struct shmseg {
         // DRS
         int connectedboardsDRS = 0; // number of connected DRS boards
         std::chrono::high_resolution_clock::time_point DRS_Aqu_start_time_us ;
+        int nevtDRS[6];
 
         // QTP
         int connectedboardsQTP = 0; // number of connected QTP boards

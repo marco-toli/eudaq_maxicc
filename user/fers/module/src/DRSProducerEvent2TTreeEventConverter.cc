@@ -31,12 +31,16 @@ bool DRSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq:
         EUDAQ_THROW("Failed to cast event to RawEvent");
     }
 
-
+    int eventNumber = ev->GetEventNumber();
     int brd;
     int PID[16];
     int iPID;
 
-    CAEN_DGTZ_X742_EVENT_t unpacked_event[16];
+
+
+    //CAEN_DGTZ_X742_EVENT_t unpacked_event[16];
+    CAEN_DGTZ_X742_EVENT_t* unpacked_event[16] = {nullptr};
+
     auto block_n_list = ev->GetBlockNumList();
     for(auto &block_n: block_n_list){
 	std::vector<uint8_t> block = ev->GetBlock(block_n);
@@ -45,8 +49,11 @@ bool DRSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq:
 	//std::cout<<"DRS Board= "<<brd<<", PID= "<<PID[brd]<<std::endl;
         std::vector<uint8_t> data(block.begin()+index, block.end());
 	if(data.size()>0) {
-		unpacked_event[brd]= DRSunpack_event (&data);
-		CAEN_DGTZ_X742_EVENT_t* raw_event = &unpacked_event[brd];
+
+		unpacked_event[brd] = DRSunpack_event(&data);
+
+
+		CAEN_DGTZ_X742_EVENT_t* raw_event = unpacked_event[brd];
 
 
 	    	if (!raw_event) {
@@ -57,11 +64,13 @@ bool DRSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq:
 
             	TString boardPIDBranchName = TString::Format("DRS_Board%d_PID", brd);
 
+
 	        if (d2->GetListOfBranches()->FindObject(boardPIDBranchName)) {
         	        d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
 	        } else {
         	        d2->Branch(boardPIDBranchName, &PID[brd], "PID/I");
 	        }
+
 
 
     		for (int group = 0; group < MAX_X742_GROUP_SIZE; ++group) {
@@ -86,12 +95,12 @@ bool DRSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq:
 
         		}
     		}
+
+		FreeDRSEvent(unpacked_event[brd]);  // Free the memory allocated for this event
+		unpacked_event[brd] = nullptr;  // Set pointer to nullptr to avoid accidental use
+
 	}
     } //end block
-
-
-
-
 
 
 

@@ -21,9 +21,9 @@ void QTPpack_event(uint16_t ADCdata[32], std::vector<uint8_t> *vec);
 void QTPunpack_event(std::vector<uint8_t> *vec, uint16_t (&ADCdata)[32]);
 
 void FERSpack(int nbits, uint32_t input, std::vector<uint8_t> *vec);
-uint16_t FERSunpack16(int index, std::vector<uint8_t> vec);
-uint32_t FERSunpack32(int index, std::vector<uint8_t> vec);
-uint64_t FERSunpack64(int index, std::vector<uint8_t> vec);
+uint16_t FERSunpack16(int index, const std::vector<uint8_t>& data);
+uint32_t FERSunpack32(int index, const std::vector<uint8_t>& data);
+uint64_t FERSunpack64(int index, const std::vector<uint8_t>& data);
 
 
 #endif

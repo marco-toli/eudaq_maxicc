@@ -97,9 +97,6 @@ FERSProducer::FERSProducer(const std::string & name, const std::string & runcont
 //----------DOC-MARK-----BEG*INI-----DOC-MARK----------
 void FERSProducer::DoInitialise(){
 	// see https://www.tutorialspoint.com/inter_process_communication/inter_process_communication_shared_memory.htm
-	//EUDAQ_WARN("producer constructor: sizeof(struct shmseg) = "+std::to_string(sizeof(struct shmseg)));
-	//EUDAQ_WARN("producer constructor: sizeof(struct shmseg) = "+std::to_string(SHM_KEY));
-	//EUDAQ_WARN("producer constructor: sizeof(struct shmseg) = "+std::to_string(0644|IPC_CREAT));
 	shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
 	//shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0);
 	if (shmid == -1) {
@@ -350,6 +347,10 @@ void FERSProducer::DoStopRun(){
 		m_conn_evque[brd].clear();
 	}
 	EUDAQ_INFO("FERS_ReadoutStatus (0=idle, 1=running) = "+std::to_string(FERS_ReadoutStatus));
+	for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
+		FERS_WriteRegister(shmp->handle[brd], a_t1_out_mask, 0);
+	}
+	EUDAQ_INFO("FERS: Trigger Veto is on");
 }
 
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
@@ -420,62 +421,26 @@ void FERSProducer::RunLoop(){
 			int bindex = -1;
 			int status = -1;
 
-			// real data
-			// 
-			//SpectEvent_t EventSpect0;
-			//SpectEvent_t EventSpect1;
-			//SpectEvent_t EventSpect2;
 			int r_status=0;
 			//std::cout<<"---3333---  --------------------------------"<<std::endl;
-/*
-    auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    std::tm* now_tm = std::localtime(&now_time_t);
-
-    auto now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
-
-    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
-              << std::setw(3) << std::setfill('0') << now_ms.count()
-              << " start reading" << std::endl;
-*/
 
 			DataQualifier=1000;
-		        //for(brd =0; brd < shmp->connectedboards+1; brd++) { // loop over boards
 		        while(DataQualifier>0) { // read all data from the boards
 				status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
-					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
-					//	<<" DataQualifier= "<<DataQualifier
-					//	<<std::endl;
-				//if (status>1) break;
-				//if (DataQualifier>0) {
-				//	std::cout<<"---3333--- DataQualifier = "<<DataQualifier
-				//	<<" nb = "<<nb
-				//	<<" status = "<<status
-				//	<<std::endl;
-				//}
+
 				if (DataQualifier==DTQ_SERVICE){  // Service event
                                 	ServEvent_t* Ev = (ServEvent_t*)Event;
 					shmp->tempFPGA[bindex]=Ev->tempFPGA;
 					shmp->hv_Vmon[bindex]=Ev->hv_Vmon;
 					shmp->hv_Imon[bindex]=Ev->hv_Imon;
 					shmp->hv_status_on[bindex]=Ev->hv_status_on;
-  				        std::cout<<"---3333---  service event on board "<<bindex<<std::endl;
-					//while (DataQualifier==DTQ_SERVICE)
-	                                //    status = FERS_GetEvent(vhandle, &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
+  				        //std::cout<<"---3333---  service event on board "<<bindex<<std::endl;
 				}
 				//if(nb>0&&DataQualifier==19) { // Data event in Spec + Time mode
 				if(nb>0&&DataQualifier==17) { // Data event in Spec 
 					newData++; // data - events*boards
 					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
 					m_conn_evque[bindex].push_back(*EventSpect);
-
-					//if(bindex==0) 
-					std::cout<<"---3333---  read trig id = "<<EventSpect->trigger_id
-						<<" bindex = "<<bindex
-						<<" energyHG[1] = "<<EventSpect->energyHG[1]
-						//<<" ToA[1] = "<<EventSpect->tstamp[1]
-						//<<" ToT[1] = "<<EventSpect->ToT[1]
-						<<std::endl;
 
 					//std::cout<<"---3333---  status="<<status<<" board=" << bindex
 					//	<<" DataQualifier= "<<DataQualifier
@@ -485,23 +450,12 @@ void FERSProducer::RunLoop(){
 					//	<<" nb= "<<nb<<std::endl;
 				}
 			} // end of - read all data from the boards
-/*
-    now = std::chrono::system_clock::now();
-    now_time_t = std::chrono::system_clock::to_time_t(now);
-    now_tm = std::localtime(&now_time_t);
-
-    now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
-
-    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
-              << std::setw(6) << std::setfill('0') << now_ms.count()
-              << " end reading" << std::endl;
-*/
 
 		if( newData >= shmp->connectedboards) {  // if evt*boards >= boards, i.e. at least one complete event candidate
 			newData=0;
     			int Nevt = 1000;
 
-			// check if there is enough FERS data to asample an event
+			// check if there is enough FERS data to asamble an event
 			// Find the min number of events that could be assambled - Nevt
     			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {  
                 		int qsize = m_conn_evque[brd].size();
@@ -530,81 +484,46 @@ void FERSProducer::RunLoop(){
 				m_conn_ev.clear(); // Just in case ...
 
 				int bCntr = 0;
-                               	std::cout<<"---3334---";  
+
 				// assemble one event with same trig count for all boards
 		            	for(auto &conn_evque: m_conn_evque){
         	        		auto &ev_front = conn_evque.second.front();
                 			int ibrd = conn_evque.first;
-                                 	std::cout<<" iboard= "<<ibrd<<" ";
+
                 			if(ev_front.trigger_id == trigger_n){
                         			m_conn_ev[ibrd]=ev_front;
                         			conn_evque.second.pop_front();
 						bCntr++;
-	                                 	std::cout<<ev_front.trigger_id <<", ";
 	                		}
         	    		}
-                              	std::cout<<std::endl;
-
-                                        //std::cout<<"---3333---  ievt= "<<ievt
-                                        //        <<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id + shmp->EvCntCorrFERS[brd]
-                                        //        <<" m_conn_ev.size() = "<<m_conn_ev.size()
-                                        //        <<" trigger_n = "<<trigger_n
-                                        //        <<" bCntr = "<<bCntr
-                                        //        <<std::endl;
-
-                                        //std::cout<<"---3333---  trigger_id = " << trigger_n <<std::endl;
 
 	            		if(bCntr!=shmp->connectedboards) {  // check for missing data from some of the FERS boards
 
-        	        		//EUDAQ_THROW("Event sorting failed with "+std::to_string(m_conn_ev.size())
-                	        	//	+" board's records instead of "+std::to_string(shmp->connectedboards) );
 
-        	        		EUDAQ_WARN("Event sorting failed with "+std::to_string(m_conn_ev.size())
+        	        		EUDAQ_WARN("Event alignment failed with "+std::to_string(m_conn_ev.size())
                 	        		+" board's records instead of "+std::to_string(shmp->connectedboards) );
 					ev->Print(std::cout);
 					SendEvent(std::move(ev));
 
 					m_conn_ev.clear();
             			}else{
-					// If all boards provided data - send the event
-					//std::cout<<"---3333---  ------------------------- "<<std::endl;
                 			for( int brd = 0 ; brd<shmp->connectedboards;brd++) {
 						if( m_flag_ts && brd==0 ){
 							auto du_ts_beg_us = std::chrono::duration_cast<std::chrono::microseconds>(shmp->FERS_Aqu_start_time_us - get_midnight_today());
 							auto tp_trigger0 = std::chrono::microseconds(static_cast<long int>(m_conn_ev[brd].tstamp_us));
 							du_ts_beg_us += tp_trigger0;
-							//std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
 							std::chrono::microseconds du_ts_end_us(du_ts_beg_us + m_us_evt_length);
 							ev->SetTimestamp(static_cast<uint64_t>(du_ts_beg_us.count()), static_cast<uint64_t>(du_ts_end_us.count()));
-							//std::cout<<"---3333--- du_ts_beg_us "<<du_ts_beg_us.count()<<" du_ts_end_us "<<du_ts_end_us.count()<<std::endl;
 						}
 
                         			std::vector<uint8_t> data;
 						make_header(brd, FERS_pid(vhandle[brd]), &data);
         	                		// Add data here
-						//FERSpackevent(Event, DataQualifier, &data);
 						FERSpackevent( static_cast<void*>(&m_conn_ev[brd]), 1, &data);
-						//FERSpackevent(static_cast<void*>(&m_conn_ev[brd]),&data);
-						//FERSpack_tspectevent(static_cast<void*>(&m_conn_ev[brd]),&data);
-						//std::cout<<"---3333---  m_conn_ev[brd].trigger_id "<<m_conn_ev[brd].trigger_id<<std::endl;
-						//std::cout<<"---3333---  m_conn_ev[brd].tstamp_us/1000. "<<m_conn_ev[brd].tstamp_us/1000<<std::endl;
-						//std::cout<<"---3333---  data.size() "<<data.size()<<std::endl;
-
-						//std::cout<<(static_cast<SpectEvent_t*>(&m_conn_ev[brd]))->energyLG[1]<<std::endl;
 						uint32_t block_id = m_plane_id + brd;
-
-						//int n_blocks = ev->AddBlock(block_id, data);
-						//std::cout<<"---3333---  brd="<<brd
-						//<<" block_id  "<<n_blocks
-						//<<std::endl;
 
 						int n_blocks = ev->AddBlock(block_id, data);
 
-						//std::cout<<"---3333---  brd="<<brd
-
-			//	<<" EvCntCorrFERS "<<m_conn_ev[brd].trigger_id+shmp->EvCntCorrFERS[brd]
-						//	<<" block_id  "<<block_id
-						//	<<std::endl;
 	                		}
 
 					//ev->Print(std::cout);
@@ -617,27 +536,8 @@ void FERSProducer::RunLoop(){
 
 		} // End NewData
 
-			//
-			//std::cout<<"--FERS_ReadoutStatus (0=idle, 1=running) = " << FERS_ReadoutStatus <<std::endl;
-			//std::cout<<"--status of FERS_GetEvent (0=No Data, 1=Good Data 2=Not Running, <0 = error) = "<< std::to_string(status)<<std::endl;
-			//std::cout<<"  --bindex = "<< std::to_string(bindex) <<" tstamp_us = "<< std::to_string(tstamp_us) <<std::endl;
-			//std::cout<<"  --DataQualifier = "<< std::to_string(DataQualifier) +" nb = "<< std::to_string(nb) <<std::endl;
 
-
-/*
-    now = std::chrono::system_clock::now();
-    now_time_t = std::chrono::system_clock::to_time_t(now);
-    now_tm = std::localtime(&now_time_t);
-
-    now_ms = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
-
-    std::cout << std::put_time(now_tm, "%H:%M:%S") << '.'
-              << std::setw(3) << std::setfill('0') << now_ms.count()
-              << " end processing" << std::endl;
-*/
-
-
-			std::this_thread::sleep_until(tp_end_of_busy);
+		std::this_thread::sleep_until(tp_end_of_busy);
 
 	}// while !m_exit_of_run 
 }

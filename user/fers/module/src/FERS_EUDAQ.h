@@ -92,9 +92,14 @@ int read_header(std::vector<uint8_t> *data, int *board, int *PID);
 void dump_vec(std::string title, std::vector<uint8_t> *vec, int start=0, int stop=0);
 
 void FERSpack(int nbits, uint32_t input, std::vector<uint8_t> *vec);
-uint16_t FERSunpack16(int index, std::vector<uint8_t> vec);
-uint32_t FERSunpack32(int index, std::vector<uint8_t> vec);
-uint64_t FERSunpack64(int index, std::vector<uint8_t> vec);
+//uint16_t FERSunpack16(int index, std::vector<uint8_t> vec);
+//uint32_t FERSunpack32(int index, std::vector<uint8_t> vec);
+//uint64_t FERSunpack64(int index, std::vector<uint8_t> vec);
+
+uint16_t FERSunpack16(int index, const std::vector<uint8_t>& data);
+uint32_t FERSunpack32(int index, const std::vector<uint8_t>& data);
+uint64_t FERSunpack64(int index, const std::vector<uint8_t>& data);
+
 //// to test:
 //  uint16_t num16 = 0xabcd;
 //  uint32_t num32 = 0x12345678;

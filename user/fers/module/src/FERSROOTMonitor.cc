@@ -49,8 +49,9 @@ private:
   TH1D* m_FERS_hv_Vmon;
   TH1D* m_FERS_hv_Imon;
   TH1I* m_FERS_hv_status_on;
+  TH1I* m_DRS_nEvt;
 
-  TH1D* m_trgTime_diff;
+  //TH1D* m_trgTime_diff;
   //TH1D* m_my_hist;
   //TGraph2D* m_my_graph;
 
@@ -93,8 +94,9 @@ void FERSROOTMonitor::AtConfiguration(){
   m_FERS_hv_Vmon =  m_monitor->Book<TH1D>("Monitor/FERS_hv_Vmon","FERS_hv_Vmon","h_FERS_hv_Vmon","FERS_hv_Vmon;Board;hv_Vmon [V]",16,-0.5,15.5);
   m_FERS_hv_Imon =  m_monitor->Book<TH1D>("Monitor/FERS_hv_Imon","FERS_hv_Imon","h_FERS_hv_Imon","FERS_hv_Imon;Board;hv_Imon [mA]",16,-0.5,15.5);
   m_FERS_hv_status_on =  m_monitor->Book<TH1I>("Monitor/FERS_hv_status_on","FERS_hv_status_on","h_FERS_hv_status_on","FERS_hv_status_on;Board;hv_status_on",16,-0.5,15.5);
+  m_DRS_nEvt =  m_monitor->Book<TH1I>("Monitor/DRS_nEvt","DRS_nEvt","h_DRS_nEvt","DRS Nevt Mem;Number of events in buffer;Entries",128,-0.5,128.5);
 
-  m_trgTime_diff = m_monitor->Book<TH1D>("Monitor/trigTime_diff_FD","trigTime_diff_FD","h_trigTime_diff_FD","time difference between FERS and DRS in ms;;time(FERS-DRS) [ms]",3,0.,1.);
+  //m_trgTime_diff = m_monitor->Book<TH1D>("Monitor/trigTime_diff_FD","trigTime_diff_FD","h_trigTime_diff_FD","time difference between FERS and DRS in ms;;time(FERS-DRS) [ms]",3,0.,1.);
 
 /*
   for(int ich=0;ich<16;ich++) {
@@ -154,7 +156,7 @@ void FERSROOTMonitor::AtConfiguration(){
 	sprintf (tname,"Board %d Pulse Ch%02d",i,ich);
 	sprintf (sname,"h_Board%d_Pulse_Ch%02d",i,ich);
   	m_DRS_Pulse_Ch[i][ich] = m_monitor->Book<TProfile>(hname, tname , sname, 
-    		"Average Pulse ;TS;ADC", 1024, 0., 1024.);
+    		"Pulse ;TS;ADC", 1024, 0., 1024.);
 	}
   }
   //m_my_graph = m_monitor->Book<TGraph2D>("Channel 0/my_graph", "Example graph");
@@ -233,25 +235,24 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 				//std::cout<<"---7777--- brd = "<<brd<<std::endl;
 				//std::cout<<"---7777--- PID = "<<PID<<std::endl;
 
+				m_DRS_nEvt->AddBinContent(shmp->nevtDRS[brd],1);
 				if(data.size()>0) {
-  					CAEN_DGTZ_X742_EVENT_t  Event = DRSunpack_event (&data);
-					//m_DRS_Ch_TS0_ADC[brd]->Fill(Event.DataGroup[0].DataChannel[0][0]);
+  					CAEN_DGTZ_X742_EVENT_t* Event = DRSunpack_event (&data);
+
 					int hch = 0;
 					for (int igr=0; igr<4;igr++){
-						if (Event.GrPresent[igr]) {
+						if (Event->GrPresent[igr]) {
 							for (int ich=0; ich<8;ich++){
 							hch = ich + igr*8;
 								m_DRS_Pulse_Ch[brd][hch]->Reset();
-								for(int its=0;its<Event.DataGroup[igr].ChSize[ich];its++){
-									m_DRS_Pulse_Ch[brd][hch]->Fill(Float_t(its+0.5),Event.DataGroup[igr].DataChannel[ich][its]);
-	//if (brd==3&&igr==0&&ich==0)
-	  //if(its>=300&&its<500) sigDRS+=Event.DataGroup[igr].DataChannel[ich][its];
-	//if (brd==3&&igr==0&&ich==1)
-	  //if(its>=300&&its<500) pedDRS+=Event.DataGroup[igr].DataChannel[ich][its];
+								for(int its=0;its<Event->DataGroup[igr].ChSize[ich];its++){
+									m_DRS_Pulse_Ch[brd][hch]->Fill(Float_t(its+0.5),Event->DataGroup[igr].DataChannel[ich][its]);
 								}
 							}
 						}
 					}
+					FreeDRSEvent(Event);
+
 				}
 			}
 
@@ -285,7 +286,7 @@ void FERSROOTMonitor::AtEventReception(eudaq::EventSP ev){
 		}else { // Decode Beam elements (to be included later)
 		}
 	}
-		m_trgTime_diff->SetBinContent(2,static_cast<double>(trigTime[0])-static_cast<double>(trigTime[1]));
+		//m_trgTime_diff->SetBinContent(2,static_cast<double>(trigTime[0])-static_cast<double>(trigTime[1]));
 		//m_DRS_FERS->Fill((sigDRS-pedDRS+93000)/10.,sigFERS);
 		//std::cout<<"---9999---"<<sigFERS<<" , "<<sigDRS-pedDRS<<" , "<<pedDRS<<" , "<<sigDRS<<std::endl;
 
