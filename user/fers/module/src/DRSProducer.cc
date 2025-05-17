@@ -28,7 +28,7 @@ class DRSProducer : public eudaq::Producer {
   void DoTerminate() override;
   void DoReset() override;
   void RunLoop() override;
-  void make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>>* m_conn_evque);
+  //void make_evtCnt_corr(std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>>* m_conn_evque);
   CAEN_DGTZ_X742_EVENT_t* deep_copy_event(const CAEN_DGTZ_X742_EVENT_t *src) ;
   void free_deep_copied_event(CAEN_DGTZ_X742_EVENT_t* event);
 
@@ -58,7 +58,7 @@ private:
   char *buffer = NULL;
   double TTimeTag_calib = 58.59125; // 58.594 MHz from CAEN manual
 
-  std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t>> m_conn_evque;
+  std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t*>> m_conn_evque;
   std::map<int, CAEN_DGTZ_X742_EVENT_t> m_conn_ev;
 
 
@@ -260,7 +260,7 @@ void DRSProducer::DoConfigure(){
      if (ret) {
     	EUDAQ_THROW("DRS: Allocate memory for the event data failed on board"+std::to_string(BoardInfo.SerialNumber));
      }
-     ret = CAEN_DGTZ_MallocReadoutBuffer(handle, &buffer,&AllocatedSize); /* WARNING: This malloc must be done after the digitizer programming */
+     ret = CAEN_DGTZ_MallocReadoutBuffer(vhandle[brd], &buffer,&AllocatedSize); /* WARNING: This malloc must be done after the digitizer programming */
      if (ret) {
     	EUDAQ_THROW("DRS: Allocate memory for the readout buffer failed on board"+std::to_string(BoardInfo.SerialNumber));
      }else{
@@ -274,24 +274,14 @@ void DRSProducer::DoConfigure(){
 //----------DOC-MARK-----BEG*RUN-----DOC-MARK----------
 void DRSProducer::DoStartRun(){
   m_exit_of_run = false;
-  // here the hardware is told to startup data acquisition
-  //ret = CAEN_DGTZ_SetExtTriggerInputMode(vhandle[0], CAEN_DGTZ_TRGMODE_DISABLED);
-  //Sleep(5);
   std::chrono::time_point<std::chrono::high_resolution_clock> tp_start_aq = std::chrono::high_resolution_clock::now();
   shmp->DRS_Aqu_start_time_us=tp_start_aq;
-  //auto tp_start_aq_duration = std::chrono::duration_cast<std::chrono::microseconds>(shmp->DRS_Aqu_start_time_us.time_since_epoch());
-  //std::cout<<"---6666---  time[us] = " << tp_start_aq_duration.count() <<std::endl;
-
-  //shmp->DRS_offset_us = 0;
 
   for( int brd = 0 ; brd<NBoardsDRS;brd++) {
      m_conn_evque[brd].clear();
      ret = CAEN_DGTZ_GetInfo(vhandle[brd], &BoardInfo);
      ret = CAEN_DGTZ_SWStartAcquisition(vhandle[brd]);
 
-     //auto return_sq = std::chrono::steady_clock::now();
-     //auto time_difference = std::chrono::duration_cast<std::chrono::microseconds>(return_sq - tp_start_aq);
-     //std::cout<<"---6666---  time[us] = " << time_difference.count() <<" on board "<<brd<<std::endl;
 
      if (ret) {
     	EUDAQ_THROW("DRS: StartAcquisition failed on board"+std::to_string(BoardInfo.SerialNumber));
@@ -300,13 +290,6 @@ void DRSProducer::DoStartRun(){
      }
   }
 
-  //Sleep(5);
-  //ret = CAEN_DGTZ_SetExtTriggerInputMode(vhandle[0], CAEN_DGTZ_TRGMODE_ACQ_AND_EXTOUT);
-
-
-//CAEN_DGTZ_TRGMODE_DISABLED
-//CAEN_DGTZ_TRGMODE_ACQ_ONLY
-//CAEN_DGTZ_TRGMODE_ACQ_AND_EXTOUT
 
 
 }
@@ -376,43 +359,17 @@ void DRSProducer::RunLoop(){
   auto tp_start_run = std::chrono::steady_clock::now();
   uint32_t trigger_n = 0;
 
-  /*
-  uint8_t x_pixel = 16;
-  uint8_t y_pixel = 16;
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<uint32_t> position(0, x_pixel*y_pixel-1);
-  std::uniform_int_distribution<uint32_t> signal(0, 255);
-  */
 
   while(!m_exit_of_run){
     auto tp_trigger = std::chrono::steady_clock::now();
     auto tp_end_of_busy = tp_trigger + m_ms_busy;
 
-    //std::cout<<"---6666---  " << shmp->FERS_offset_us<<" , "<<shmp->DRS_offset_us<<std::endl;
-
-
-    //for( int brd = 0 ; brd<ns;brd++) {
-    //    CAEN_DGTZ_SendSWtrigger(vhandle[brd]);
-    //}
-    // real data
-    //EUDAQ_INFO("DRS: Read data ------------------------ ");
-
-    //auto now = std::chrono::high_resolution_clock::now();
-    //auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-    //std::cout << std::fixed << std::setprecision(6) << "(1) Current time in microseconds: " << microseconds/1000000. << " µs" << std::endl;
 
     for( int brd = 0 ; brd<NBoardsDRS;brd++) {
-       //now = std::chrono::high_resolution_clock::now();
-       //microseconds = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-       //std::cout << "Brd = "<<brd<<std::fixed << std::setprecision(6) << " (1a) Current time in microseconds: " << microseconds/1000000. << " s" << std::endl;
 
        ret = CAEN_DGTZ_ReadData(vhandle[brd], CAEN_DGTZ_SLAVE_TERMINATED_READOUT_MBLT, buffer, &BufferSize);
 
 
-       //now = std::chrono::high_resolution_clock::now();
-       //microseconds = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-       //std::cout << "Brd = "<<brd<<std::fixed << std::setprecision(6) << " (1b) Current time in microseconds: " << microseconds/1000000. << " s" << std::endl;
 
        if (ret) {
       	EUDAQ_THROW("DRS: ReadData failed ret ="+ std::to_string(ret));
@@ -420,16 +377,7 @@ void DRSProducer::RunLoop(){
        ret = CAEN_DGTZ_GetNumEvents(vhandle[brd], buffer, BufferSize, &NumEvents);
        if (ret) {
       	EUDAQ_THROW("DRS: CAEN_DGTZ_GetNumEvents failed");
-       //}else{
-       //	  EUDAQ_INFO("DRS: ReadData buffer size "+std::to_string(BufferSize)+" on board "+std::to_string(brd)
-	//	+" NumEvents= "+std::to_string(NumEvents)
-       //   );
        }
-       //ret = CAEN_DGTZ_GetEventInfo(handle, buffer, BufferSize, i, &EventInfo, &EventPtr);
-
-       //std::cout<<"---6666--- DRS, brd= "
-       //	<<brd<<" , Nevt= "<<(int)NumEvents
-       //	<<std::endl;
 
        shmp->nevtDRS[brd] = (int)NumEvents;
 
@@ -444,41 +392,20 @@ void DRSProducer::RunLoop(){
 	        EUDAQ_THROW("DRS: CAEN_DGTZ_DecodeEvent failed");
 	  }
 
+ 	 //if(brd==0)
+	 //		std::cout<<"---1111---Trigg,Evt, DataGroup[0].DataChannel0,TS[10]: "
+	 //		<<EventInfo.EventCounter<<", "<<i<<", "<<Event742->DataGroup[0].DataChannel[0][10]<<std::endl; 
           Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter; // A workaround ...
 
 	  //m_conn_evque[brd].push_back(*Event742);
-	  //m_conn_evque[brd].push_back(*DRSProducer::deep_copy_event(Event742)); 
+
 	  auto copied_event = DRSProducer::deep_copy_event(Event742); // Fix for shallow copy in CAEN DIgitizer
 
 	  if (copied_event) {
-	    m_conn_evque[brd].push_back(*copied_event);  // Copies the content
-	    m_allocated_events.push_back(copied_event);  // Track the allocation
+	    m_conn_evque[brd].push_back(copied_event);
 	  }
 
 
-          //std::cout<<"---6666---Evt, btd,  Event742->DataGroup[0].DataChannel[0][1] "
-	  //		<<i<<" , "<<brd<<" , "<<Event742->DataGroup[0].DataChannel[0][1]
-	  //		<<" , "<<Event742->DataGroup[1].TriggerTimeTag
-	  //		<<" , "<<m_conn_evque[brd].back().DataGroup[1].TriggerTimeTag
-	  //		<<" , "<<m_conn_evque[brd].front().DataGroup[1].TriggerTimeTag
-	  //		<<std::endl;
-
-          //std::cout<<"---6666---   brd= "
-	  //		<<brd<<" , iEvt= "<<i
-	  //		<<" , trig= "<<m_conn_evque[brd].back().DataGroup[1].TriggerTimeTag
-	  //		<<std::endl;
-
-          //EUDAQ_INFO("Plot "+std::to_string(brd)
-          //      +" , "+std::to_string(EventInfo.EventCounter)
-          //      +" , "+std::to_string(Event742->DataGroup[0].TriggerTimeTag/TTimeTag_calib/1000./2.+ 12. * (brd))
-          //      +" , " + std::to_string(Event742->DataGroup[0].DataChannel[0][1])
-          //);
-
-          //EUDAQ_INFO("DRS: EvInfo Board "+std::to_string(brd)
-          //      +" EvC "+std::to_string(EventInfo.EventCounter)
-          //      +" TrigT0 "+std::to_string(Event742->DataGroup[0].TriggerTimeTag)
-          //      +"DRS: Group=0, ch=0, TS=1, ADC= " + std::to_string(Event742->DataGroup[0].DataChannel[0][1])
-          //);
        }
 
     }
@@ -491,12 +418,10 @@ void DRSProducer::RunLoop(){
     int Nevt = 128;
 
     for( int brd = 0 ; brd<NBoardsDRS;brd++) {
-		int qsize = m_conn_evque[brd].size();
-          	//EUDAQ_INFO("Sorting: cheking size " + std::to_string(brd)
-		//	+"  "+std::to_string(qsize) );
-	       if( qsize < Nevt) Nevt = qsize;
+	int qsize = m_conn_evque[brd].size();
+	if( qsize < Nevt) 
+		Nevt = qsize;
     }
-    //std::cout<<"---6666--- Nevt "<<Nevt <<std::endl;
 
 
 
@@ -506,15 +431,9 @@ void DRSProducer::RunLoop(){
     	    ev->SetTag("Plane ID", std::to_string(m_plane_id));
 
 
-	    //if(m_flag_ts){
-	    //  std::chrono::nanoseconds du_ts_beg_ns(tp_trigger - tp_start_run);
-	    //  std::chrono::nanoseconds du_ts_end_ns(tp_end_of_busy - tp_start_run);
-	    //  ev->SetTimestamp(du_ts_beg_ns.count(), du_ts_end_ns.count());
-	    //}
-
             trigger_n=-1;
 	    for(auto &conn_evque: m_conn_evque){
-	        int trigger_n_ev = conn_evque.second.front().DataGroup[1].TriggerTimeTag ;  // DRS Ev counter is stored instead
+	        int trigger_n_ev = conn_evque.second.front()->DataGroup[1].TriggerTimeTag ;  // DRS Ev counter is stored instead
 
         	if(trigger_n_ev< trigger_n||trigger_n<0)
 	          trigger_n = trigger_n_ev;
@@ -527,24 +446,31 @@ void DRSProducer::RunLoop(){
             m_conn_ev.clear(); // Just in case ...
 
 	    for(auto &conn_evque: m_conn_evque){
-	    	auto &ev_front = conn_evque.second.front();
+	    	CAEN_DGTZ_X742_EVENT_t* ev_front = conn_evque.second.front();
 		int ibrd = conn_evque.first;
                         //std::cout<<"---1111---Evt, btd,  ev_front.DataGroup[0].DataChannel[0][1] trig "
 			//<<ievt<<" , "<<ibrd<<" , "<<ev_front.DataGroup[0].DataChannel[0][1]
 			//<<" , "<<ev_front.DataGroup[1].TriggerTimeTag
 			//<<std::endl;
 
- 		if((ev_front.DataGroup[1].TriggerTimeTag) == trigger_n){
-      			//m_conn_ev[ibrd]=ev_front;
-      			m_conn_ev[ibrd]= ev_front;
+		//if(ibrd==0)
+		//	std::cout<<"---2222---Trigg,Evt, DataGroup[0].DataChannel0,TS[10]: "
+		//	<<ev_front->DataGroup[1].TriggerTimeTag<<", "<<ievt<<", "<<ev_front->DataGroup[0].DataChannel[0][10]<<std::endl; 
+
+
+		//std::cout<<"---1111--- DRS trigg alignment ..."<<std::endl;
+ 		if((ev_front->DataGroup[1].TriggerTimeTag) == trigger_n){
+      			m_conn_ev[ibrd]= *ev_front;
+			m_allocated_events.push_back(ev_front);
 			conn_evque.second.pop_front();
 
 	    	}
+		//std::cout<<"---1111--- DRS trigg alignment done !"<<std::endl;
 	    }
 
 
 	    if(m_conn_ev.size()!=NBoardsDRS) {
-		EUDAQ_WARN("Event sorting failed with "+std::to_string(m_conn_ev.size())
+		EUDAQ_WARN("DRS Event alignment failed with "+std::to_string(m_conn_ev.size())
 			+" board's records instead of "+std::to_string(NBoardsDRS) );
 	    }else{
 
@@ -557,16 +483,9 @@ void DRSProducer::RunLoop(){
                           du_ts_beg_us += tp_trigger0;
                           std::chrono::microseconds du_ts_end_us(du_ts_beg_us + m_us_evt_length);
                           ev->SetTimestamp(static_cast<uint64_t>(du_ts_beg_us.count()), static_cast<uint64_t>(du_ts_end_us.count()));
-                          //std::cout<<"---6666--- du_ts_beg_us "<<du_ts_beg_us.count()/1000000
-			  //	<<" du_ts_end_us "<<du_ts_end_us.count()/1000000
-			  //	<<" TriggerTimeTag "<<m_conn_ev[brd].DataGroup[0].TriggerTimeTag
-			  //	<<" DRS_trigC "<<shmp->DRS_trigC
-			  //	<<" CTriggerTimeTag "<<CTriggerTimeTag
-			  //	<<std::endl;
                      }
 
 		     std::vector<uint8_t> data;
-	    	     //ev->SetTriggerN(trigger_n);
 		     make_header(brd, PID_DRS[brd], &data);
 		     // Add data here
 		     DRSpack_event(static_cast<void*>(&m_conn_ev[brd]),&data);
@@ -574,11 +493,10 @@ void DRSProducer::RunLoop(){
 	    	     ev->AddBlock(m_plane_id+brd, data);
 		} // loop over boards
 
-          	//EUDAQ_INFO("Sending Ev");
-
 
 	    	SendEvent(std::move(ev));
                 m_conn_ev.clear();
+
 
 		for (auto event_ptr : m_allocated_events) {
 		  free_deep_copied_event(event_ptr);
@@ -590,9 +508,6 @@ void DRSProducer::RunLoop(){
 
     }// loop over all collected events in the transfer
 
-    //now = std::chrono::high_resolution_clock::now();
-    //microseconds = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-    //std::cout << std::fixed << std::setprecision(6) << "(3) Current time in microseconds: " << microseconds/1000000. << " µs" << std::endl;
 
     std::this_thread::sleep_until(tp_end_of_busy);
 
@@ -602,13 +517,15 @@ void DRSProducer::RunLoop(){
 //----------DOC-MARK-----END*IMP-----DOC-MARK----------
 
 
-
 CAEN_DGTZ_X742_EVENT_t* DRSProducer::deep_copy_event(const CAEN_DGTZ_X742_EVENT_t *src) {
     // Allocate memory for the new event
     CAEN_DGTZ_X742_EVENT_t *copy = (CAEN_DGTZ_X742_EVENT_t*)malloc(sizeof(CAEN_DGTZ_X742_EVENT_t));
     if (copy == NULL) {
         return NULL; // Memory allocation failed
     }
+
+    // Initialize all pointers in copy to NULL for safety
+    memset(copy, 0, sizeof(CAEN_DGTZ_X742_EVENT_t)); // ** Added for robustness **
 
     // Copy GrPresent array
     memcpy(copy->GrPresent, src->GrPresent, sizeof(src->GrPresent));
@@ -618,7 +535,7 @@ CAEN_DGTZ_X742_EVENT_t* DRSProducer::deep_copy_event(const CAEN_DGTZ_X742_EVENT_
         if (src->GrPresent[i]) { // If the group has data
             // Copy ChSize array
             memcpy(copy->DataGroup[i].ChSize, src->DataGroup[i].ChSize, sizeof(src->DataGroup[i].ChSize));
-            
+
             // Copy TriggerTimeTag and StartIndexCell
             copy->DataGroup[i].TriggerTimeTag = src->DataGroup[i].TriggerTimeTag;
             copy->DataGroup[i].StartIndexCell = src->DataGroup[i].StartIndexCell;
@@ -630,16 +547,24 @@ CAEN_DGTZ_X742_EVENT_t* DRSProducer::deep_copy_event(const CAEN_DGTZ_X742_EVENT_
                     copy->DataGroup[i].DataChannel[j] = (float*)malloc(src->DataGroup[i].ChSize[j] * sizeof(float));
                     if (copy->DataGroup[i].DataChannel[j] == NULL) {
                         // If allocation fails, free previously allocated memory
-                        for (int k = 0; k < j; k++) {
+                        for (int k = 0; k < j; k++) { // Free previously allocated channels
                             free(copy->DataGroup[i].DataChannel[k]);
                         }
-                        free(copy);
+                        // Free memory from earlier groups
+                        for (int g = 0; g < i; g++) { 
+                            for (int c = 0; c < MAX_X742_CHANNEL_SIZE; c++) {
+                                if (copy->DataGroup[g].DataChannel[c]) {
+                                    free(copy->DataGroup[g].DataChannel[c]);
+                                }
+                            }
+                        }
+                        free(copy); // Free the main structure
                         return NULL; // Memory allocation failed
                     }
                     // Copy the channel data
                     memcpy(copy->DataGroup[i].DataChannel[j], src->DataGroup[i].DataChannel[j], src->DataGroup[i].ChSize[j] * sizeof(float));
                 } else {
-                    copy->DataGroup[i].DataChannel[j] = NULL;
+                    copy->DataGroup[i].DataChannel[j] = NULL; // Ensure unallocated channels are NULL
                 }
             }
         } else {
@@ -650,6 +575,7 @@ CAEN_DGTZ_X742_EVENT_t* DRSProducer::deep_copy_event(const CAEN_DGTZ_X742_EVENT_
 
     return copy;
 }
+
 
 void DRSProducer::free_deep_copied_event(CAEN_DGTZ_X742_EVENT_t* event) {
     if (!event) return;
@@ -663,3 +589,36 @@ void DRSProducer::free_deep_copied_event(CAEN_DGTZ_X742_EVENT_t* event) {
     }
     free(event);
 }
+
+
+
+/*
+
+typedef struct
+{
+    uint32_t             EventSize;
+    uint32_t             BoardId;
+    uint32_t             Pattern;
+    uint32_t             ChannelMask;
+    uint32_t             EventCounter;
+    uint32_t             TriggerTimeTag;
+} CAEN_DGTZ_EventInfo_t;
+
+typedef struct
+{
+    uint32_t                 ChSize[MAX_X742_CHANNEL_SIZE];           // the number of samples stored in DataChannel array
+    float                    *DataChannel[MAX_X742_CHANNEL_SIZE];     // the array of ChSize samples
+    uint32_t                 TriggerTimeTag;
+    uint16_t                 StartIndexCell;
+} CAEN_DGTZ_X742_GROUP_t;
+
+typedef struct
+{
+    uint8_t                    GrPresent[MAX_X742_GROUP_SIZE]; // If the group has data the value is 1 otherwise is 0
+    CAEN_DGTZ_X742_GROUP_t    DataGroup[MAX_X742_GROUP_SIZE]; // the array of ChSize samples
+} CAEN_DGTZ_X742_EVENT_t;
+
+
+
+
+*/

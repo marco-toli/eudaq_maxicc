@@ -65,36 +65,37 @@ bool FERSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq
                         d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
                 } else {
                         d2->Branch(boardPIDBranchName, &PID[brd], "PID/I");
+                        d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
                 }
 
 		TString branch_name = TString::Format("FERS_Board%d_tstamp_us", brd);
 
-    		if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].tstamp_us);
-    		else d2->Branch(branch_name, &spect_event[brd].tstamp_us, "tstamp_us/D");
+    		if (d2->GetListOfBranches()->FindObject(branch_name))d2->SetBranchAddress(branch_name, &spect_event[brd].tstamp_us);
+    		else {d2->Branch(branch_name, &spect_event[brd].tstamp_us, "tstamp_us/D"); d2->SetBranchAddress(branch_name, &spect_event[brd].tstamp_us);}
 
 		    branch_name = TString::Format("FERS_Board%d_rel_tstamp_us", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].rel_tstamp_us);
-		    else d2->Branch(branch_name, &spect_event[brd].rel_tstamp_us, "rel_tstamp_us/D");
+		    else {d2->Branch(branch_name, &spect_event[brd].rel_tstamp_us, "rel_tstamp_us/D");d2->SetBranchAddress(branch_name, &spect_event[brd].rel_tstamp_us);}
 
 		    branch_name = TString::Format("FERS_Board%d_trigger_id", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].trigger_id);
-		    else d2->Branch(branch_name, &spect_event[brd].trigger_id, "trigger_id/g");
+		    else {d2->Branch(branch_name, &spect_event[brd].trigger_id, "trigger_id/g"); d2->SetBranchAddress(branch_name, &spect_event[brd].trigger_id);}
 
 		    branch_name = TString::Format("FERS_Board%d_chmask", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].chmask);
-		    else d2->Branch(branch_name, &spect_event[brd].chmask, "chmask/g");
+		    else {d2->Branch(branch_name, &spect_event[brd].chmask, "chmask/g");d2->SetBranchAddress(branch_name, &spect_event[brd].chmask);}
 
 		    branch_name = TString::Format("FERS_Board%d_qdmask", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].qdmask);
-		    else d2->Branch(branch_name, &spect_event[brd].qdmask, "qdmask/g");
+		    else {d2->Branch(branch_name, &spect_event[brd].qdmask, "qdmask/g");d2->SetBranchAddress(branch_name, &spect_event[brd].qdmask);}
 
 		    branch_name = TString::Format("FERS_Board%d_energyHG", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyHG);
-		    else d2->Branch(branch_name, spect_event[brd].energyHG, "energyHG[64]/s");
+		    else {d2->Branch(branch_name, spect_event[brd].energyHG, "energyHG[64]/s");d2->SetBranchAddress(branch_name, spect_event[brd].energyHG);}
 
 		    branch_name = TString::Format("FERS_Board%d_energyLG", brd);
 		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyLG);
-		    else d2->Branch(branch_name, spect_event[brd].energyLG, "energyLG[64]/s");
+		    else {d2->Branch(branch_name, spect_event[brd].energyLG, "energyLG[64]/s");d2->SetBranchAddress(branch_name, spect_event[brd].energyLG);}
 
 
 	}

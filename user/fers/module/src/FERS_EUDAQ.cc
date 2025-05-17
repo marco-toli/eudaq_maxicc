@@ -28,7 +28,7 @@ std::fstream runfile[MAX_NBRD]; // pointers to ascii output data files
 
 // puts a nbits (16, 32, 64) integer into an 8 bits vector.
 // bytes are in a machine-independent order
-/*
+
 void FERSpack(int nbits, uint32_t input, std::vector<uint8_t> *vec)
 {
 	uint8_t out;// = (uint8_t)( input & 0x00FF);
@@ -41,18 +41,8 @@ void FERSpack(int nbits, uint32_t input, std::vector<uint8_t> *vec)
 		vec->push_back( out );
 	}
 }
-*/
 
-void FERSpack(int nbits, uint32_t input, std::vector<uint8_t> *vec)
-{
-    // Pre-reserve memory to avoid reallocations
-    vec->reserve(vec->size() + (nbits + 7) / 8);
 
-    // Process all bytes at once
-    for (int i = 0; i < nbits; i += 8) {
-        vec->push_back(static_cast<uint8_t>(input >> i));
-    }
-}
 
 // reads a 16/32 bits integer from a 8 bits vector
 /*
@@ -94,12 +84,14 @@ uint16_t FERSunpack16(int index, const std::vector<uint8_t>& vec)
 
 
 uint32_t FERSunpack32(int index, const std::vector<uint8_t>& vec) {
+    if (index < 0 || static_cast<size_t>(index + 3) >= vec.size()) {
+        throw std::out_of_range("Index out of bounds in FERSunpack32");
+    }
     return static_cast<uint32_t>(vec[index]) |
            (static_cast<uint32_t>(vec[index + 1]) << 8) |
            (static_cast<uint32_t>(vec[index + 2]) << 16) |
            (static_cast<uint32_t>(vec[index + 3]) << 24);
 }
-
 
 
 uint64_t FERSunpack64(int index, const std::vector<uint8_t>& vec)
