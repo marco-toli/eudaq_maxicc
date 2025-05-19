@@ -50,11 +50,13 @@ void DRSpack_event(void* Event, std::vector<uint8_t> *vec)
 }
 
 
-CAEN_DGTZ_X742_EVENT_t* DRSunpack_event(std::vector<uint8_t> *vec)  
+
+CAEN_DGTZ_X742_EVENT_t* DRSunpack_event(std::vector<uint8_t> *vec)
 {
   std::vector<uint8_t> data(vec->begin(), vec->end());
-  CAEN_DGTZ_X742_EVENT_t *tmpEvent = (CAEN_DGTZ_X742_EVENT_t *)malloc(sizeof(CAEN_DGTZ_X742_EVENT_t));  
-  memset(tmpEvent, 0, sizeof(CAEN_DGTZ_X742_EVENT_t));  
+  CAEN_DGTZ_X742_EVENT_t *tmpEvent = (CAEN_DGTZ_X742_EVENT_t *)malloc(sizeof(CAEN_DGTZ_X742_EVENT_t));
+  memset(tmpEvent, 0, sizeof(CAEN_DGTZ_X742_EVENT_t));
+
 
   int index = 0;
   for (int ig = 0; ig < MAX_X742_GROUP_SIZE; ig++) {
@@ -77,7 +79,39 @@ CAEN_DGTZ_X742_EVENT_t* DRSunpack_event(std::vector<uint8_t> *vec)
     }
   }
 
-  return tmpEvent;  
+  return tmpEvent;
+}
+
+CAEN_DGTZ_X742_EVENT_S_t DRSunpack_event_S(std::vector<uint8_t> *vec)
+{
+    std::vector<uint8_t> data(vec->begin(), vec->end());
+    CAEN_DGTZ_X742_EVENT_S_t tmpEvent; // stack-allocated, no malloc
+    memset(&tmpEvent, 0, sizeof(CAEN_DGTZ_X742_EVENT_S_t));
+
+    int index = 0;
+    for (int ig = 0; ig < MAX_X742_GROUP_SIZE; ig++) {
+        tmpEvent.GrPresent[ig] = data.at(index);
+        index += 1;
+    }
+
+    for (int ig = 0; ig < MAX_X742_GROUP_SIZE; ig++) {
+        if (tmpEvent.GrPresent[ig]) {
+            for (int ich = 0; ich < MAX_X742_CHANNEL_SIZE; ich++) {
+                tmpEvent.DataGroup[ig].ChSize[ich] = FERSunpack32(index, data);
+                index += 4;
+            }
+            for (int ich = 0; ich < MAX_X742_CHANNEL_SIZE; ich++) {
+                for (uint32_t its = 0; its < tmpEvent.DataGroup[ig].ChSize[ich]; its++) {
+                    tmpEvent.DataGroup[ig].DataChannel[ich][its] = FERSunpack32(index, data);
+                    index += 4;
+                }
+            }
+            tmpEvent.DataGroup[ig].TriggerTimeTag = FERSunpack32(index, data); index += 4;
+            tmpEvent.DataGroup[ig].StartIndexCell = FERSunpack16(index, data); index += 2;
+        }
+    }
+
+    return tmpEvent; // returned by value, no pointers or dynamic memory
 }
 
 

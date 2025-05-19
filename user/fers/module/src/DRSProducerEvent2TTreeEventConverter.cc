@@ -22,76 +22,74 @@ namespace {
         Register<DRSProducerEvent2TTreeEventConverter>(DRSProducerEvent2TTreeEventConverter::m_id_factory);
 }
 
-bool DRSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq::TTreeEventSP d2, eudaq::ConfigSPC conf) const {
+bool DRSProducerEvent2TTreeEventConverter::Converting(
+    eudaq::EventSPC      d1,
+    eudaq::TTreeEventSP  d2,
+    eudaq::ConfigSPC     conf
+) const {
     auto ev = std::dynamic_pointer_cast<const eudaq::RawEvent>(d1);
     if (!ev) {
         EUDAQ_THROW("Failed to cast event to RawEvent");
     }
 
-    int eventNumber = ev->GetEventNumber();
-    int brd;
-    int PID[16] = {0}; // Initialize PID array to prevent garbage values
-    int iPID;
+    // Prepare storage for up to 16 boards, no malloc, no smart pointers
+    CAEN_DGTZ_X742_EVENT_S_t unpacked_event[16] = {}; 
+    int  PID[16] = {0};
 
-    // Use smart pointers for better memory management
-    std::unique_ptr<CAEN_DGTZ_X742_EVENT_t> unpacked_event[16] = {nullptr}; 
-
-    auto block_n_list = ev->GetBlockNumList();
-    for (const auto& block_n : block_n_list) {
+    for (auto block_n : ev->GetBlockNumList()) {
         std::vector<uint8_t> block = ev->GetBlock(block_n);
-
-        // Validate block size and read_header return values
         if (block.empty()) {
             EUDAQ_THROW("Empty block encountered");
         }
 
+        int brd, iPID;
         int index = read_header(&block, &brd, &iPID);
-        if (index < 0 || brd < 0 || brd >= 16) { // Validate brd and index values
+        if (index < 0 || brd < 0 || brd >= 16) {
             EUDAQ_THROW("Invalid header read or board index");
         }
-
         PID[brd] = iPID;
+
+        // Slice off the payload and unpack into our stack‐allocated struct
         std::vector<uint8_t> data(block.begin() + index, block.end());
+        unpacked_event[brd] = DRSunpack_event_S(&data);
 
-        if (!data.empty()) {
-            unpacked_event[brd].reset(DRSunpack_event(&data)); // Use smart pointer
-            if (!unpacked_event[brd]) {
-                EUDAQ_THROW("Failed to retrieve raw event data");
-            }
+        // PID branch
+        TString branchPID = TString::Format("DRS_Board%d_PID", brd);
+        if (d2->GetListOfBranches()->FindObject(branchPID)) {
+            d2->SetBranchAddress(branchPID, &PID[brd]);
+        } else {
+            d2->Branch(branchPID, &PID[brd], "PID/I")
+              ->SetAddress(&PID[brd]);
+        }
 
-            TString boardPIDBranchName = TString::Format("DRS_Board%d_PID", brd);
+        // loop over groups & channels
+        auto &evt = unpacked_event[brd];
+        for (int g = 0; g < MAX_X742_GROUP_SIZE; ++g) {
+            if (!evt.GrPresent[g]) continue;
+            auto &grp = evt.DataGroup[g];
 
-            if (d2->GetListOfBranches()->FindObject(boardPIDBranchName)) {
-                d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
-            } else {
-                d2->Branch(boardPIDBranchName, &PID[brd], "PID/I");
-                d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
-            }
+            for (int ch = 0; ch < MAX_X742_CHANNEL_SIZE; ++ch) {
+                uint32_t chSize = grp.ChSize[ch];
+                // pointer into fixed‐size array
+                float *buf = grp.DataChannel[ch];
 
-            for (int group = 0; group < MAX_X742_GROUP_SIZE; ++group) {
-                if (unpacked_event[brd]->GrPresent[group]) {
-                    const auto& dataGroup = unpacked_event[brd]->DataGroup[group];
+                if (chSize == 0) continue;
+                TString branchName = 
+                  TString::Format("DRS_Board%d_Group%d_Channel%d", brd, g, ch);
 
-                    for (int channel = 0; channel < MAX_X742_CHANNEL_SIZE; ++channel) {
-                        uint32_t chSize = dataGroup.ChSize[channel];
-                        float* data = dataGroup.DataChannel[channel];
-
-                        // Validate channel data size
-                        if (chSize > 0 && data) {
-                            TString branchName = TString::Format("DRS_Board%d_Group%d_Channel%d", brd, group, channel);
-
-                            if (d2->GetListOfBranches()->FindObject(branchName)) {
-                                d2->SetBranchAddress(branchName, data);
-                            } else {
-                                d2->Branch(branchName, data, TString::Format("data[%d]/F", chSize));
-                                d2->SetBranchAddress(branchName, data);
-                            }
-                        }
-                    }
+                if (d2->GetListOfBranches()->FindObject(branchName)) {
+                    d2->SetBranchAddress(branchName, buf);
+                } else {
+                    // tell ROOT it's a float array of length chSize
+                    d2->Branch(branchName, buf, 
+                               TString::Format("data[%d]/F", chSize))
+                      ->SetAddress(buf);
                 }
             }
+            // (If you want to store TriggerTimeTag or StartIndexCell,
+            //  add branches here, e.g. grp.TriggerTimeTag, grp.StartIndexCell.)
         }
-    } // end block_n_list loop
+    }  // end for each block
 
     return true;
 }
