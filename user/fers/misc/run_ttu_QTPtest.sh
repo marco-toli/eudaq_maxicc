@@ -6,7 +6,7 @@ killall -9 euCliProducer
 killall -9 euLog
 killall -9 euRun
 
-BINPATH=/home/daq/eudaq_rino/bin
+BINPATH=/home/daq/eudaq_flib42/bin
 
 $BINPATH/euRun &
 sleep 1

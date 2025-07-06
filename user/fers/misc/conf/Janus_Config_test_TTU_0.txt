@@ -102,7 +102,7 @@ Q_DiscrMask1                       0xFFFFFFFF           # Q-OR Channel enable ma
 GainSelect                         BOTH                 # Gain selection in output data format. It can be both HG and LG, HG or LG only or automatic (HG if not saturated, LG otherwise). Options: HIGH, LOW, AUTO, BOTH
 HG_Gain                            50                   # High Gain Setting (1 to 63)
 LG_Gain                            50                   # Low Gain Setting (1 to 63)
-Pedestal                           150                  # Common Pedestal in channels (ADC reading with no input signal)
+Pedestal                           250                  # Common Pedestal in channels (ADC reading with no input signal)
 ZS_Threshold_LG                    0                    # Threshold for Zero Suppression (LG)
 ZS_Threshold_HG                    0                    # Threshold for Zero Suppression (HG)
 HG_ShapingTime                     25 ns                # Shaping Time of the slow shaper (High Gain). Options: 87.5 ns, 75 ns, 62.5 ns, 50 ns, 37.5 ns, 25 ns, 12.5 ns

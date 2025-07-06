@@ -34,12 +34,12 @@ RECORD_LENGTH  1024
 # options: 0 to 100
 # For x742 there is a delay of about 42 nsec on Fast Trigger TR, and about 115 nsec on TRG-IN; 
 # the post trigger is added to this delay  
-POST_TRIGGER  50
+POST_TRIGGER  1
 
 #PULSE_POLARITY: input signal polarity.
 #options: POSITIVE, NEGATIVE
 #
-PULSE_POLARITY  NEGATIVE
+PULSE_POLARITY NEGATIVE
 
 # EXTERNAL_TRIGGER: external trigger input settings. When enabled, the ext. trg. can be either 
 # propagated (ACQUISITION_AND_TRGOUT) or not (ACQUISITION_ONLY) through the TRGOUT
@@ -54,7 +54,7 @@ FAST_TRIGGER  ACQUISITION_ONLY
 # FAST_TRIGGER_DIGITIZING: ONLY FOR 742 MODELS. If enabled the fast trigger signal is digitized and it is
 # present in data readout as channel n.8 for each group.
 # options: YES, NO
-ENABLED_FAST_TRIGGER_DIGITIZING		NO
+ENABLED_FAST_TRIGGER_DIGITIZING		YES
 
 # Correction Level to use with x742 Digitizers Family
 # Syntax: CORRECTION_LEVEL <CORR_MASK> <CUST_TABLE_MASK> <FILENAME1> <FILENAME2> ...
