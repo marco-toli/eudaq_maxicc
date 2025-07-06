@@ -1,6 +1,6 @@
 ```
 
-git clone -b v3.0.0 https://github.com/jdamgov/eudaq_tb2024.git
+git clone -b v3.1.0 https://github.com/jdamgov/eudaq_tb2024.git
 mkdir eudaq_tb2024/build
 cd eudaq_tb2024/build
 cmake -D EUDAQ_BUILD_ONLINE_ROOT_MONITOR=ON -D EUDAQ_LIBRARY_BUILD_TTREE=ON ..
