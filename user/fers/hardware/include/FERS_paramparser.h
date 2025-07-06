@@ -17,14 +17,8 @@
 #ifndef _PARAMPARSER_H
 #define _PARAMPARSER_H                    // Protect against multiple inclusion
 
-#include "JanusC.h"
-
-//****************************************************************************
-// Function prototypes
-//****************************************************************************
-int ParseConfigFile(FILE *f_ini, Config_t *WRcfg, bool start);
-int streq(char* str1, char* str2);
-int streq(char* str1, char* str2);
+#include <stdint.h>
+#include <stdio.h>
 
 
 #endif

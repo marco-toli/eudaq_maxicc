@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include "eudaq/Monitor.hh"
 
-#include "configure.h"
+//#include "configure.h"
 
 #include "DataSender.hh"
 #include "QTP_EUDAQ.h"

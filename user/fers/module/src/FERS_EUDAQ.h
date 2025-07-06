@@ -9,7 +9,7 @@
 #define _FERS_EUDAQ_h
 
 #include <vector>
-#include "paramparser.h"
+//#include "paramparser.h"
 #include <map>
 
 #include "FERS_EUDAQ_shm.h"
@@ -27,7 +27,7 @@ typedef struct {
 	uint32_t HV; // 1000 * HV from HV_Get_Vbias( handle, &HV);
 	uint32_t Tor_cnt;
 	uint32_t Qor_cnt;
-	uint32_t hitcnt[FERSLIB_MAX_NCH];
+	uint32_t hitcnt[FERSLIB_MAX_NCH_5202];
 } StaircaseEvent_t;
 
 // known types of event (for event length checks for instance in Monitor)
@@ -79,17 +79,16 @@ StaircaseEvent_t FERSunpack_staircaseevent(std::vector<uint8_t> *vec);
 // utilities used by the above methods
 
 // fill "data" with some info
-//void make_header(int handle, uint8_t x_pixel, uint8_t y_pixel, int DataQualifier, std::vector<uint8_t> *data);
 void make_header(int board, int DataQualifier, std::vector<uint8_t> *data);
+void make_headerFERS(int board, int PID, float HV, float Isipm, float tempDET, float tempFPGA, std::vector<uint8_t> *data);
 
 // reads back essential header info (see params)
 // prints them w/ board ID info with EUDAQ_WARN
 // returns index at which raw data starts
-//int read_header(std::vector<uint8_t> *data, uint8_t *x_pixel, uint8_t *y_pixel, uint8_t *DataQualifier);
-//int read_header(std::vector<uint8_t> *data, int *board, uint8_t *DataQualifier);
 int read_header(std::vector<uint8_t> *data, int *board, int *PID);
+int read_headerFERS(std::vector<uint8_t> *vec, int *board, int *PID, float *HV, float *Isipm, float *tempDET, float *tempFPGA);
 
-void dump_vec(std::string title, std::vector<uint8_t> *vec, int start=0, int stop=0);
+//void dump_vec(std::string title, std::vector<uint8_t> *vec, int start=0, int stop=0);
 
 void FERSpack(int nbits, uint32_t input, std::vector<uint8_t> *vec);
 //uint16_t FERSunpack16(int index, std::vector<uint8_t> vec);

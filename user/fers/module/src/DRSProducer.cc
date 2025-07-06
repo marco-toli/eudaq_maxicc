@@ -7,7 +7,7 @@
 #include <ratio>
 #include <chrono>
 #include <thread>
-#include <random>
+//#include <random>
 #ifndef _WIN32
 #include <sys/file.h>
 #endif
@@ -58,6 +58,14 @@ private:
   char *buffer = NULL;
   double TTimeTag_calib = 58.59125; // 58.594 MHz from CAEN manual
 
+
+  // WC DRS config
+  int WC_DRS_ID = -1;
+  int WC_DRS_FREQ = 0;
+  uint32_t WC_DRS_RECORD_LENGTH = 1024;
+  int WC_DRS_POST_TRIGGER = 1; 
+  int DRS_BASELINE_CORR = 1;
+
   std::map<int, std::deque<CAEN_DGTZ_X742_EVENT_t*>> m_conn_evque;
   std::map<int, CAEN_DGTZ_X742_EVENT_t> m_conn_ev;
 
@@ -105,7 +113,7 @@ void DRSProducer::DoInitialise(){
   }
 #endif
 
-  char *s, *sep, ss[6][16];
+  char *s, *sep, ss[20][16];
 
   std::string DRS_BASE_ADDRESS = ini->Get("DRS_BASE_ADDRESS", "3210");
   // split DRS_BASE_ADDRESS into strings separated by ':'
@@ -118,7 +126,7 @@ void DRSProducer::DoInitialise(){
           ss[NBoardsDRS][sep-s] = 0;
           s += sep-s+1;
           NBoardsDRS++;
-          if (NBoardsDRS == 16) break;
+          if (NBoardsDRS == 20) break;
         }
         strcpy(ss[NBoardsDRS++], s);
   EUDAQ_INFO("DRS: found "+std::to_string(NBoardsDRS)+ " addresses in fers.ini"
@@ -171,6 +179,12 @@ void DRSProducer::DoConfigure(){
     m_flag_ts = false;
     m_flag_tg = true;
   }
+
+  DRS_BASELINE_CORR = conf->Get("DRS_BASELINE_CORR", 1);
+  WC_DRS_ID = conf->Get("WC_DRS_ID", -1);
+  WC_DRS_FREQ = conf->Get("WC_DRS_FREQ", 0);
+  WC_DRS_RECORD_LENGTH = conf->Get("WC_DRS_RECORD_LENGTH", 1024);
+  WC_DRS_POST_TRIGGER = conf->Get("WC_DRS_POST_TRIGGER", 1);
 
   FILE *f_ini;
   std::string drs_conf_filename= conf->Get("DRS_CONF_FILE","NOFILE");
@@ -243,14 +257,32 @@ void DRSProducer::DoConfigure(){
     	EUDAQ_THROW("DRS: ProgramDigitizer-read failed on board"+std::to_string(BoardInfo.SerialNumber));
      }
 
+
+     // Configure the WC DRS
+     if ( brd == WC_DRS_ID){
+       EUDAQ_INFO("DRS: ID for TDC = "+std::to_string(WC_DRS_ID));
+
+       if ((ret = CAEN_DGTZ_SetDRS4SamplingFrequency(vhandle[brd], (CAEN_DGTZ_DRS4Frequency_t) WC_DRS_FREQ)) != CAEN_DGTZ_Success)
+           EUDAQ_INFO("DRS: Cannot CAEN_DGTZ_SetDRS4SamplingFrequency on board "+std::to_string(brd));
+       if ((ret = CAEN_DGTZ_SetRecordLength(vhandle[brd], WC_DRS_RECORD_LENGTH)) != CAEN_DGTZ_Success)
+           EUDAQ_INFO("DRS: Cannot CAEN_DGTZ_SetRecordLength on board "+std::to_string(brd));
+       if ((ret = CAEN_DGTZ_SetPostTriggerSize(vhandle[brd], WC_DRS_POST_TRIGGER)) != CAEN_DGTZ_Success)
+           EUDAQ_INFO("DRS: Cannot CAEN_DGTZ_SetDRS4SamplingFrequency on board "+std::to_string(brd));
+       if ((ret = CAEN_DGTZ_LoadDRS4CorrectionData(vhandle[brd], (CAEN_DGTZ_DRS4Frequency_t) WC_DRS_FREQ)) != CAEN_DGTZ_Success)
+           EUDAQ_INFO("DRS: Cannot LoadDRS4CorrectionData on board "+std::to_string(brd));
+       if ((ret = CAEN_DGTZ_EnableDRS4Correction(vhandle[brd])) != CAEN_DGTZ_Success)
+          EUDAQ_INFO("DRS: Cannot EnableDRS4Correction on board "+std::to_string(brd));
+
+     }else{
      // Load DRS factory calibration - baseline
 
-
-     if ((ret = CAEN_DGTZ_LoadDRS4CorrectionData(vhandle[brd], WDcfg.DRS4Frequency)) != CAEN_DGTZ_Success)
-         EUDAQ_INFO("DRS: Cannot LoadDRS4CorrectionData on board "+std::to_string(brd));
-     if ((ret = CAEN_DGTZ_EnableDRS4Correction(vhandle[brd])) != CAEN_DGTZ_Success)
-        EUDAQ_INFO("DRS: Cannot EnableDRS4Correction on board "+std::to_string(brd));
-
+       if (DRS_BASELINE_CORR==1) {
+          if ((ret = CAEN_DGTZ_LoadDRS4CorrectionData(vhandle[brd], WDcfg.DRS4Frequency)) != CAEN_DGTZ_Success)
+              EUDAQ_INFO("DRS: Cannot LoadDRS4CorrectionData on board "+std::to_string(brd));
+          if ((ret = CAEN_DGTZ_EnableDRS4Correction(vhandle[brd])) != CAEN_DGTZ_Success)
+             EUDAQ_INFO("DRS: Cannot EnableDRS4Correction on board "+std::to_string(brd));
+       }
+     }
 
   }
   // Allocate memory for the event data and readout buffer
@@ -371,12 +403,14 @@ void DRSProducer::RunLoop(){
 
 
 
+       NumEvents = -1;
        if (ret) {
-      	EUDAQ_THROW("DRS: ReadData failed ret ="+ std::to_string(ret));
+	EUDAQ_THROW("DRS: ReadData failed ret ="+ std::to_string(ret));
        }
+
        ret = CAEN_DGTZ_GetNumEvents(vhandle[brd], buffer, BufferSize, &NumEvents);
        if (ret) {
-      	EUDAQ_THROW("DRS: CAEN_DGTZ_GetNumEvents failed");
+ 	EUDAQ_THROW("DRS: CAEN_DGTZ_GetNumEvents failed");
        }
 
        shmp->nevtDRS[brd] = (int)NumEvents;
@@ -392,12 +426,7 @@ void DRSProducer::RunLoop(){
 	        EUDAQ_THROW("DRS: CAEN_DGTZ_DecodeEvent failed");
 	  }
 
- 	 //if(brd==0)
-	 //		std::cout<<"---1111---Trigg,Evt, DataGroup[0].DataChannel0,TS[10]: "
-	 //		<<EventInfo.EventCounter<<", "<<i<<", "<<Event742->DataGroup[0].DataChannel[0][10]<<std::endl; 
           Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter; // A workaround ...
-
-	  //m_conn_evque[brd].push_back(*Event742);
 
 	  auto copied_event = DRSProducer::deep_copy_event(Event742); // Fix for shallow copy in CAEN DIgitizer
 
@@ -441,39 +470,39 @@ void DRSProducer::RunLoop(){
 	    if(m_flag_tg)
       		ev->SetTriggerN(trigger_n);
 
-            //std::cout<<"---6666---  trigger_id = " << trigger_n <<std::endl;
 
             m_conn_ev.clear(); // Just in case ...
 
 	    for(auto &conn_evque: m_conn_evque){
 	    	CAEN_DGTZ_X742_EVENT_t* ev_front = conn_evque.second.front();
 		int ibrd = conn_evque.first;
-                        //std::cout<<"---1111---Evt, btd,  ev_front.DataGroup[0].DataChannel[0][1] trig "
-			//<<ievt<<" , "<<ibrd<<" , "<<ev_front.DataGroup[0].DataChannel[0][1]
-			//<<" , "<<ev_front.DataGroup[1].TriggerTimeTag
-			//<<std::endl;
 
-		//if(ibrd==0)
-		//	std::cout<<"---2222---Trigg,Evt, DataGroup[0].DataChannel0,TS[10]: "
-		//	<<ev_front->DataGroup[1].TriggerTimeTag<<", "<<ievt<<", "<<ev_front->DataGroup[0].DataChannel[0][10]<<std::endl; 
+		if (ev_front->DataGroup[1].TriggerTimeTag > shmp->DRS_last_trigID[ibrd]){
+	                shmp->DRS_last_event_time_us=std::chrono::high_resolution_clock::now();
+			shmp->DRS_last_trigID[ibrd]= ev_front->DataGroup[1].TriggerTimeTag;
+		}
+
+                std::cout<<"---1111---Evt= "<<ievt<<", brd= "<<ibrd
+		<<", trig= "<<ev_front->DataGroup[1].TriggerTimeTag <<std::endl;
+
+		//auto nowT = std::chrono::system_clock::now();
+		//std::time_t time = std::chrono::system_clock::to_time_t(nowT);
+		//auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(nowT.time_since_epoch()) % 1000;
+		//std::tm localTime = *std::localtime(&time);
+		//std::cout << std::put_time(&localTime, "%H:%M:%S") << '.' 
+              	//	<< std::setfill('0') << std::setw(3) << ms.count() << '\n';
 
 
-		//std::cout<<"---1111--- DRS trigg alignment ..."<<std::endl;
  		if((ev_front->DataGroup[1].TriggerTimeTag) == trigger_n){
       			m_conn_ev[ibrd]= *ev_front;
 			m_allocated_events.push_back(ev_front);
 			conn_evque.second.pop_front();
 
 	    	}
-		//std::cout<<"---1111--- DRS trigg alignment done !"<<std::endl;
 	    }
 
 
-	    if(m_conn_ev.size()!=NBoardsDRS) {
-		EUDAQ_WARN("DRS Event alignment failed with "+std::to_string(m_conn_ev.size())
-			+" board's records instead of "+std::to_string(NBoardsDRS) );
-	    }else{
-
+	    if(m_conn_ev.size()==NBoardsDRS) {
 	    	for( int brd = 0 ; brd<NBoardsDRS;brd++) {
 
                      if( m_flag_ts && brd==0 ){
@@ -487,11 +516,12 @@ void DRSProducer::RunLoop(){
 
 		     std::vector<uint8_t> data;
 		     make_header(brd, PID_DRS[brd], &data);
-		     // Add data here
+
 		     DRSpack_event(static_cast<void*>(&m_conn_ev[brd]),&data);
 
 	    	     ev->AddBlock(m_plane_id+brd, data);
 		} // loop over boards
+
 
 
 	    	SendEvent(std::move(ev));

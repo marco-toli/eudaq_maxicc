@@ -9,7 +9,7 @@
 #include <ratio>
 #include <chrono>
 #include <thread>
-#include <random>
+//#include <random>
 #ifndef _WIN32
 #include <sys/file.h>
 #endif
@@ -486,10 +486,10 @@ void QTPDProducer::RunLoop(){
   uint32_t trigger_n = 0;
   uint8_t x_pixel = 16;
   uint8_t y_pixel = 16;
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<uint32_t> position(0, x_pixel*y_pixel-1);
-  std::uniform_int_distribution<uint32_t> signal(0, 255);
+  //std::random_device rd;
+  //std::mt19937 gen(rd());
+  //std::uniform_int_distribution<uint32_t> position(0, x_pixel*y_pixel-1);
+  //std::uniform_int_distribution<uint32_t> signal(0, 255);
 
   while(!m_exit_of_run){
     auto tp_trigger = std::chrono::steady_clock::now();
@@ -503,7 +503,8 @@ void QTPDProducer::RunLoop(){
         //BaseAddress = QTPBaseAddr;
         BaseAddress = QTPBaseAddrS[brd];
 
-        std::cout<<"---7777---  Start reading data from QTP board "<< brd <<std::endl;
+        //std::cout<<"---7777---  Start reading data from QTP board "<< brd <<std::endl;
+
 	/*
 	CAENVME_FIFOMBLTReadCycle(handle, BaseAddress, (char *)QTPbuffer, MAX_BLT_SIZE, cvA32_U_MBLT, &bcnt);
         std::cout<<"---7777---  Read Data Block: size =  "<< bcnt <<" bytes" <<std::endl;
@@ -579,7 +580,7 @@ void QTPDProducer::RunLoop(){
                         } else {
                                 DataType = DATATYPE_HEADER;
 				ev->SetTriggerN(QTPbuffer[pnt] & 0xFFFFFF);
- 				std::cout<<"---7777---   SetTriggerN "<< (QTPbuffer[pnt] & 0xFFFFFF) <<std::endl;
+ 				std::cout<<"---7777--- QDC  SetTriggerN "<< (QTPbuffer[pnt] & 0xFFFFFF) <<std::endl;
                         }
 			quit=1;
 

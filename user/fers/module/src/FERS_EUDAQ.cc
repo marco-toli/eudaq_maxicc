@@ -9,6 +9,8 @@
 #include "FERS_Registers_5202.h"
 #include "FERS_Registers_5215.h"
 #include "FERSlib.h"
+#undef max
+#undef min
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -17,7 +19,7 @@
 #include <stdio.h>
 #include "eudaq/Monitor.hh"
 
-#include "configure.h"
+//#include "configure.h"
 
 #include "DataSender.hh"
 #include "FERS_EUDAQ.h"
@@ -143,9 +145,9 @@ void FERSpackevent(void* Event, int dataqualifier, std::vector<uint8_t> *vec)
 // Spectroscopy event
 void FERSpack_spectevent(void* Event, std::vector<uint8_t> *vec)
 {
-  int x_pixel = 8;
-  int y_pixel = 8;
-  int nchan = x_pixel*y_pixel;
+  //int x_pixel = 8;
+  //int y_pixel = 8;
+  int nchan = 64;
   // temporary event, used to correctly interpret the Event.
   // The same technique is used in the other pack routines as well
   SpectEvent_t *tmpEvent = (SpectEvent_t*)Event;
@@ -553,7 +555,7 @@ TestEvent_t FERSunpack_testevent(std::vector<uint8_t> *vec)
 //} StaircaseEvent_t;
 void FERSpack_staircaseevent(void* Event, std::vector<uint8_t> *vec){
   //EUDAQ_INFO("*** FERSpack_staircaseevent > starting encoding");
-  int n = FERSLIB_MAX_NCH;
+  int n = FERSLIB_MAX_NCH_5202;
   StaircaseEvent_t* tmpEvent = (StaircaseEvent_t*) Event;
   int index=0;
   FERSpack(16, tmpEvent->threshold, vec);  index+=2;
@@ -572,7 +574,7 @@ void FERSpack_staircaseevent(void* Event, std::vector<uint8_t> *vec){
   //EUDAQ_INFO("*** FERSpack_staircaseevent > threshold: "+std::to_string(tmpEvent->threshold));
 };
 StaircaseEvent_t FERSunpack_staircaseevent(std::vector<uint8_t> *vec){
-  int n = FERSLIB_MAX_NCH;
+  int n = FERSLIB_MAX_NCH_5202;
   std::vector<uint8_t> data( vec->begin(), vec->end() );
   StaircaseEvent_t tmpEvent;
   int index = 0;
@@ -595,7 +597,6 @@ StaircaseEvent_t FERSunpack_staircaseevent(std::vector<uint8_t> *vec){
 
 //////////////////////////
 // fill "data" with some info
-//void make_header(int handle, uint8_t x_pixel, uint8_t y_pixel, int DataQualifier, std::vector<uint8_t> *data)
 void make_header(int board, int PID, std::vector<uint8_t> *data)
 {
 	uint8_t n=0;
@@ -619,41 +620,91 @@ void make_header(int board, int PID, std::vector<uint8_t> *data)
 	}
 }
 
-
-
 // reads back essential header info (see params)
 // prints them w/ board ID info with EUDAQ_WARN
 // returns index at which raw data starts
-//int read_header(std::vector<uint8_t> *vec, uint8_t *x_pixel, uint8_t *y_pixel, uint8_t *DataQualifier)
 int read_header(std::vector<uint8_t> *vec, int *board, int *PID)
 {
 	std::vector<uint8_t> data(vec->begin(), vec->end());
 	int index = data.at(0);
-	//EUDAQ_WARN("read header > going to read " + std::to_string(index) +" bytes");
 
 	if(data.size() < index+1)
 		EUDAQ_THROW("Unknown data");
-	
-	//*x_pixel = data.at(1);
-	//*y_pixel = data.at(2);
-	//*DataQualifier = data.at(3);
+
 	*board = data.at(1);
 	*PID =  (static_cast<int>(data.at(2) << 8) | static_cast<int>(data.at(3)));
 
-	//uint8_t handle=data.at(4);
-	//uint16_t sernum=FERSunpack16(5,data);
-
-	//std::string printme = "Monitor > received from FERS serial# "
-	//	+ std::to_string(sernum)
-	//	+" handle "+std::to_string(handle)
-	//	+" n "+std::to_string(index)
-	//	+" x "+std::to_string(*x_pixel)
-	//	+" y "+std::to_string(*y_pixel)
-	//	;
-	//EUDAQ_WARN(printme);
-
 	return index+1; // first header byte is header size, then index bytes
 };
+
+
+void make_headerFERS(int board, int PID, float HV, float Isipm, float tempDET, float tempFPGA, std::vector<uint8_t> *data)
+{
+    uint8_t n = 0;
+    std::vector<uint8_t> vec;
+
+    // Board ID (1 byte)
+    vec.push_back(static_cast<uint8_t>(board));
+
+    // PID (2 bytes, big-endian)
+    vec.push_back(static_cast<uint8_t>((PID & 0xFF00) >> 8)); // High byte
+    vec.push_back(static_cast<uint8_t>(PID & 0x00FF));        // Low byte
+    n += 3;
+
+    auto append_float_be = [&](float value) {
+        uint8_t *p = reinterpret_cast<uint8_t *>(&value);
+        vec.push_back(p[3]); // Most significant byte
+        vec.push_back(p[2]);
+        vec.push_back(p[1]);
+        vec.push_back(p[0]); // Least significant byte
+        n += 4;
+    };
+
+    append_float_be(HV);
+    append_float_be(Isipm);
+    append_float_be(tempDET);
+    append_float_be(tempFPGA);
+
+    // Prefix vector with header size
+    data->push_back(n);
+    for (int i = 0; i < n; i++) {
+        data->push_back(vec.at(i));
+    }
+}
+
+
+
+
+
+int read_headerFERS(std::vector<uint8_t> *vec, int *board, int *PID, float *HV, float *Isipm, float *tempDET, float *tempFPGA)
+{
+    std::vector<uint8_t> data(vec->begin(), vec->end());
+    int index = data.at(0);
+
+    if (data.size() < index + 1)
+        EUDAQ_THROW("Unknown data");
+
+    *board = data.at(1);
+    *PID = (static_cast<int>(data.at(2)) << 8) | static_cast<int>(data.at(3));
+
+    // Read float from big-endian byte sequence
+    auto read_float_be = [&](int offset, float *dest) {
+        uint8_t temp[4];
+        temp[3] = data.at(offset);     // MSB
+        temp[2] = data.at(offset + 1);
+        temp[1] = data.at(offset + 2);
+        temp[0] = data.at(offset + 3); // LSB
+        std::memcpy(dest, temp, sizeof(float));
+    };
+
+    read_float_be(4, HV);
+    read_float_be(8, Isipm);
+    read_float_be(12, tempDET);
+    read_float_be(16, tempFPGA);
+
+    return index + 1; // Header size + header bytes
+}
+
 
 // dump a vector
 void dump_vec(std::string title, std::vector<uint8_t> *vec, int start, int stop){
@@ -662,7 +713,6 @@ void dump_vec(std::string title, std::vector<uint8_t> *vec, int start, int stop)
 	std::string printme;
 	for (int i=start; i<n; i++){
 		printme = "--- "+title+" > vec[" + std::to_string(i) + "] = "+ std::to_string( vec->at(i) );
-		//std::cout << printme <<std::endl;
 		EUDAQ_WARN( printme );
 	}
 };
@@ -676,21 +726,32 @@ void dump_vec(std::string title, std::vector<uint8_t> *vec, int start, int stop)
 void initshm( int shmid )
 {
 	struct shmseg* shmp = (shmseg*)shmat(shmid, NULL, 0);
-	shmp->connectedboards = 0;
-	for (int i=0; i<MAX_NBRD; i++)
-	{
-		shmp->HVbias[i]=0;
-		shmp->handle[i]=0;
-		shmp->nchannels[i] = FERSLIB_MAX_NCH; // 64
-		//shmp->AcquisitionMode[i] = 0;
-		memset(shmp->IP       [i], '\0', MAXCHAR);
-		//memset(shmp->desc     [i], '\0', MAXCHAR);
-		//memset(shmp->location [i], '\0', MAXCHAR);
-		memset(shmp->producer [i], '\0', MAXCHAR);
-		memset(shmp->collector[i], '\0', MAXCHAR);
+
+	std::memset(shmp->DRS_last_trigID, 0, sizeof(shmp->DRS_last_trigID));
+	std::memset(shmp->FERS_last_trigID, 0, sizeof(shmp->FERS_last_trigID));
+
+	std::memset(shmp->SUMenergyLG, 0, sizeof(shmp->SUMenergyLG));
+	std::memset(shmp->SUMenergyHG, 0, sizeof(shmp->SUMenergyHG));
+        shmp->SUMevt=0;
+
+        for (int igr = 0; igr<MAX_NGR; igr++) {
+  	    //shmp->connectedboards[igr] = {0};
+	    for (int i=0; i<MAX_NBRD; i++)
+	    {
+		shmp->HVbias[igr][i]=0;
+        	shmp->tempFPGA[igr][i]=0;
+	        shmp->tempDet[igr][i]=0;
+        	shmp->hv_Vmon[igr][i]=0;
+	        shmp->hv_Imon[igr][i]=0;
+        	shmp->hv_status_on[igr][i]=0;
+		//shmp->handle[igr][i]=0;
+		//shmp->nchannels[i] = FERSLIB_MAX_NCH_5202; // 64
+		//memset(shmp->IP       [i], '\0', MAXCHAR);
+	    }
 	}
 }
 
+/*
 void openasciistream(shmseg* shmp, int brd){
 	std::map<int, std::string> asciiheader;
 	asciiheader[ 0             ] = "#INVALID"              ;
@@ -703,20 +764,13 @@ void openasciistream(shmseg* shmp, int brd){
 	asciiheader[ DTQ_STAIRCASE ] = "#rateHz,hitcnt[]"      ;
 
 	EUDAQ_INFO("openasciistream called for board "+std::to_string(brd));
-	//int a = shmp->AcquisitionMode[brd];
 	std::fstream readme;
 	readme.open("readme_test.txt",std::ios::out);
 	readme<<"board: "<< brd << std::endl;
-	//readme<<"AcquisitionMode: "<< a <<std::endl;
-	//readme<<"header of ascii file: "<< asciiheader[a] <<std::endl;
-	//readme<<"desc: "<< shmp->desc[brd] << std::endl;
-	//readme<<"location:"<< shmp->location[brd] << std::endl;
-	readme<<"IP:"<< shmp->IP[brd] << std::endl;
+	//readme<<"IP:"<< shmp->IP[brd] << std::endl;
 	readme<<"HVbias:"<< std::to_string(shmp->HVbias[brd]) << std::endl;
-	readme<<"channels:"<< std::to_string(shmp->nchannels[brd]) << std::endl;
+	//readme<<"channels:"<< std::to_string(shmp->nchannels[brd]) << std::endl;
 	readme<<"handle:"<< std::to_string(shmp->handle[brd]) << std::endl;
-	readme<<"producer:"<< shmp->producer[brd] << std::endl;
-	readme<<"collector:"<< shmp->collector[brd] << std::endl;
 	readme.close();
 	EUDAQ_INFO("Created readme");
 
@@ -728,37 +782,35 @@ void openasciistream(shmseg* shmp, int brd){
 		EUDAQ_WARN("NOT Opened ascii brd "+std::to_string(brd));
 		} else {
 		EUDAQ_WARN("Opened ascii brd "+std::to_string(brd));
-		}              
-	}                      
-}                              
+		}
+	}
+}
 void closeasciistream(shmseg* shmp){
 	for (int i=0; i<shmp->connectedboards; i++){
 		runfile[i].close();
 		EUDAQ_WARN("closed ascii file brd "+std::to_string(i));
 	};
 }
+
 void writeasciistream(int brd, std::string buffer){
 	//EUDAQ_WARN("writeasciistream called with brd = "+std::to_string(brd)+", buffer = "+buffer);
 	runfile[brd] << buffer <<std::endl;
 }
+*/
 
 
-
+/*
 void dumpshm( struct shmseg* shmp, int brd )
 {
 	std::string output = "*** shmp["+std::to_string(brd)+"]="+
-	//" desc: "+shmp->desc[brd]+
-	//" location:"+shmp->location[brd]+
 	"";
 	EUDAQ_WARN(output);
 	output = "*** shmp["+std::to_string(brd)+"]="+
 	" IP:"+shmp->IP[brd]+
 	" HVbias:"+std::to_string(shmp->HVbias[brd])+
-	" channels:"+std::to_string(shmp->nchannels[brd])+
+	//" channels:"+std::to_string(shmp->nchannels[brd])+
 	" handle:"+std::to_string(shmp->handle[brd])+
-	" producer:"+shmp->producer[brd]+
-	" collector:"+shmp->collector[brd]+
-	//" AcquisitionMode:"+std::to_string(shmp->AcquisitionMode[brd])+
 	"";
 	EUDAQ_WARN(output);
 }
+*/

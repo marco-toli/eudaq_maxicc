@@ -14,7 +14,7 @@
 * software, documentation and results solely at his own risk.
 ******************************************************************************/
 
-#include "MultiPlatform.h"
+//#include "MultiPlatform.h"
 #include "console.h"
 
 
@@ -403,13 +403,13 @@ int Con_GetString(char *str, int MaxCounts)
 {
 	if (!ConSocket) {
 		fflush(stdin);
-#ifndef _WIN32
-		cooked();
-#endif
+//#ifndef _WIN32
+//		cooked();
+//#endif
 		fgets(str, MaxCounts, stdin);
-#ifndef _WIN32
-		raw();
-#endif
+//#ifndef _WIN32
+//		raw();
+//#endif
 		return((int)strlen(str));
 	}
 	else {
@@ -522,9 +522,27 @@ int Con_printf(char *dest, char *fmt, ...)
 	}
 		
 	if ((ConLog != NULL) && (strstr(dest, "L"))) {
-		uint64_t log_time = get_time();
+		static uint64_t t0=0;
+		uint64_t elapsed_time;
+		uint64_t log_time = j_get_time();
+		if (t0 == 0) {
+			char mytime[100];
+			time_t startt;
+			time(&startt);
+			strcpy(mytime, asctime(gmtime(&startt)));
+			mytime[strlen(mytime) - 1] = 0;
+			fprintf(ConLog, "Starting Janus Log on %s UTC\n", mytime);
+			t0 = log_time;
+		}
 		char type[50];
 		char mmsg[500];
+
+		elapsed_time = log_time - t0;
+		uint64_t ms = elapsed_time % 1000;
+		uint64_t s = (elapsed_time / 1000) % 60;
+		uint64_t m = (elapsed_time / 60000) % 60;
+		uint64_t h = (elapsed_time / 3600000);
+
 		// warning: JW, error: JE, information: JI
 		if (strstr(dest, "w"))	// Warning msg in yellow
 			sprintf(type, "JW");	
@@ -533,7 +551,7 @@ int Con_printf(char *dest, char *fmt, ...)
 		else
 			sprintf(type, "JI");
 
-		sprintf(mmsg, "[%" PRIu64 "][%s]%s", log_time, type, msg);
+		sprintf(mmsg, "[%02dh:%02dm:%02ds:%03dms][%s]%s", (int)h, (int)m, (int)s, (int)ms, type, msg);
 		fprintf(ConLog, "%s", mmsg); // Write to Log File
 		fflush(ConLog);
 	}

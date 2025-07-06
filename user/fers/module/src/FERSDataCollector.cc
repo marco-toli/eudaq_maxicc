@@ -23,6 +23,8 @@ private:
   std::mutex m_mtx_map;
   std::map<eudaq::ConnectionSPC, std::deque<eudaq::EventSPC>> m_conn_evque;
   std::set<eudaq::ConnectionSPC> m_conn_inactive;
+  std::set<eudaq::ConnectionSPC> m_expected_connections;
+
   uint32_t m_noprint;
 };
 
@@ -41,11 +43,13 @@ void FERSDataCollector::DoConnect(eudaq::ConnectionSPC idx){
   std::unique_lock<std::mutex> lk(m_mtx_map);
   m_conn_evque[idx].clear();
   m_conn_inactive.erase(idx);
+  m_expected_connections.insert(idx);
 }
 
 void FERSDataCollector::DoDisconnect(eudaq::ConnectionSPC idx){
   std::unique_lock<std::mutex> lk(m_mtx_map);
   m_conn_inactive.insert(idx);
+  m_expected_connections.erase(idx);
   if(m_conn_inactive.size() == m_conn_evque.size()){
     m_conn_inactive.clear();
     m_conn_evque.clear();
@@ -103,7 +107,7 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
       if(m_conn_evque.find(conn) != m_conn_evque.end() && 
 	 m_conn_evque[conn].empty()){
 	m_conn_evque.erase(conn);
-	conn_inactive_empty.insert(conn);	
+	conn_inactive_empty.insert(conn);
       }
     }
     for(auto &conn: conn_inactive_empty){
@@ -112,5 +116,6 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
   }
   if(!m_noprint)
     ev_sync->Print(std::cout);
-  WriteEvent(std::move(ev_sync));
+  if (ev_sync->GetSubEvents().size() == m_expected_connections.size())
+	  WriteEvent(std::move(ev_sync));
 }

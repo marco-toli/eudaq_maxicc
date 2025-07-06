@@ -1786,6 +1786,7 @@ int WriteOutputFilesx742(WaveDumpConfig_t *WDcfg, WaveDumpRun_t *WDrun, CAEN_DGT
 /* ########################################################################### */
 /* MAIN                                                                        */
 /* ########################################################################### */
+
 int main(int argc, char *argv[])
 {
     WaveDumpConfig_t   WDcfg;
@@ -2426,3 +2427,4 @@ QuitProgram:
 
     return 0;
 }
+

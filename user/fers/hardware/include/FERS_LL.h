@@ -18,20 +18,26 @@
 #define _FERS_LLTDL_H				// Protect against multiple inclusion
 
 #include "FERSlib.h"
+
+#include "FERS_MultiPlatform.h"
+#include "FERS_Registers_520X.h"
+#include "FERS_Registers_5215.h"
 #ifndef _WIN32
 #include <sys/ioctl.h>
 #endif
 
-extern uint16_t PedestalLG[FERSLIB_MAX_NBRD][FERSLIB_MAX_NCH];	// LG Pedestals (calibrate PHA Mux Readout)
-extern uint16_t PedestalHG[FERSLIB_MAX_NBRD][FERSLIB_MAX_NCH];	// LG Pedestals (calibrate PHA Mux Readout)
-extern uint16_t CommonPedestal;									// Common pedestal added to all channels
-extern int EnablePedCal;										// 0 = disable calibration, 1 = enable calibration
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-extern uint32_t TDL_NumNodes[FERSLIB_MAX_NCNC][FERSLIB_MAX_NTDL];	// num of nodes in the chain
+#include "FERS_config.h"
+
+extern mutex_t FERS_RoMutex;		// Mutex for the access to FERS_ReadoutStatus
+extern f_sem_t FERS_StartRunSemaphore[FERSLIB_MAX_NBRD];	// Semaphore for sync the start of the run with the data receiver thread
 
 // TDL fiber delay setting
-#define FIBER_DELAY(length_m) ((float)(22 + 0.781 * length_m))  // Delay ~= 22 + 0.781 * length (in m)
-#define DEFAULT_FIBER_LENGTH  ((float)0.3)  // default fiber length = 0.3 m
+#define FIBER_DELAY(length_m) (22.f + 0.781f * (length_m))  // Delay ~= 22 + 0.781 * length (in m)
+#define DEFAULT_FIBER_LENGTH  (0.3f)  // default fiber length = 0.3 m
 
 
 // -----------------------------------------------------------------------------------
@@ -41,9 +47,8 @@ int LLtdl_OpenDevice(char *board_ip_addr, int cindex);
 int LLtdl_CloseDevice(int cindex);
 int LLtdl_InitTDLchains(int cindex, float DelayAdjust[FERSLIB_MAX_NTDL][FERSLIB_MAX_NNODES]);
 bool LLtdl_TDLchainsInitialized(int cindex);
-int LLtdl_ControlChain(int cindex, uint16_t chain, bool enable, uint32_t token_interval);
-//int LLtdl_EnumChain(int cindex, uint16_t chain, uint32_t *node_count);
-int LLtdl_GetChainInfo(int cindex, uint16_t chain, FERS_TDL_ChainInfo_t *tdl_info);
+int LLtdl_ControlChain(int cindex, int chain, bool enable, uint32_t token_interval);
+int LLtdl_GetChainInfo(int cindex, int chain, FERS_TDL_ChainInfo_t *tdl_info);
 
 int LLeth_OpenDevice(char *board_ip_addr, int bindex);
 int LLeth_CloseDevice(int bindex);
@@ -58,8 +63,8 @@ int LLusb_Reset_IPaddress(int bindex);
 // -----------------------------------------------------------------------------------
 //int LLtdl_WriteMem(int cindex, int chain, int node, uint32_t address, char *data, uint16_t size);
 //int LLtdl_ReadMem(int cindex, int chain, int node, uint32_t address, char *data, uint16_t size);
-int LLtdl_WriteRegister(int cindex, int chain, int node, uint32_t address, uint32_t data);
 int LLtdl_MultiWriteRegister(int cindex, int chain, int node, uint32_t* address, uint32_t* data, int ncycles);
+int LLtdl_WriteRegister(int cindex, int chain, int node, uint32_t address, uint32_t data);
 int LLtdl_ReadRegister(int cindex, int chain, int node, uint32_t address, uint32_t *data);
 int LLtdl_SendCommand(int cindex, int chain, int node, uint32_t cmd, uint32_t delay);
 int LLtdl_SendCommandBroadcast(int cindex, uint32_t cmd, uint32_t delay);
@@ -83,7 +88,7 @@ int LLusb_ReadRegister(int bindex, uint32_t address, uint32_t *data);
 int LLtdl_ReadData(int cindex, char *buff, int size, int *nb);
 int LLeth_ReadData(int bindex, char *buff, int size, int *nb);
 int LLusb_ReadData(int bindex, char *buff, int size, int *nb);
-int LLtdl_ReadData_File(int bindex, char* buff, int size, int* nb, int flushing);	// flushing variable is a reset for tmp_srun.
+int LLtdl_ReadData_File(int cindex, char* buff, int size, int* nb, int flushing);
 int LLeth_ReadData_File(int bindex, char* buff, int size, int* nb, int flushing);
 int LLusb_ReadData_File(int bindex, char* buff, int size, int* nb, int flushing);
 int LLtdl_Flush(int cindex);
@@ -91,12 +96,15 @@ int LLtdl_Flush(int cindex);
 // -----------------------------------------------------------------------------------
 // Save raw data files
 // -----------------------------------------------------------------------------------
-int LLeth_OpenRawOutputFile(int bidx);
-int LLeth_CloseRawOutputFile(int bidx);
-int LLusb_OpenRawOutputFile(int bidx);
-int LLusb_CloseRawOutputFile(int bidx);
-int LLtdl_OpenRawOutputFile(int bidx);
-int LLtdl_CloseRawOutputFile(int bidx);
+int LLeth_OpenRawOutputFile(int handle);
+int LLeth_CloseRawOutputFile(int handle);
+int LLusb_OpenRawOutputFile(int handle);
+int LLusb_CloseRawOutputFile(int handle);
+int LLtdl_OpenRawOutputFile(int *handle);
+int LLtdl_CloseRawOutputFile(int handle);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif

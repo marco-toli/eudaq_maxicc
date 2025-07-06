@@ -6,7 +6,8 @@
 #include <ratio>
 #include <chrono>
 #include <thread>
-#include <random>
+//#include <random>
+#include "FERS_MultiPlatform.h"
 #include <cstring>
 #include <vector>
 #ifndef _WIN32
@@ -76,13 +77,17 @@ void TexMSO64Producer::DoInitialise(){
 
 
   auto ini = GetInitConfiguration();
-  std::string lock_path = ini->Get("TEX_DEV_LOCK_PATH", "drslockfile.txt");
+  std::string lock_path = ini->Get("TEX_DEV_LOCK_PATH", "scopelockfile.txt");
+
   m_file_lock = fopen(lock_path.c_str(), "a");
-#ifndef _WIN32
-  if(flock(fileno(m_file_lock), LOCK_EX|LOCK_NB)){ //fail
-    EUDAQ_THROW("unable to lock the lockfile: "+lock_path );
+  if (!m_file_lock) {
+    EUDAQ_THROW("Failed to open lockfile: " + lock_path);
   }
-#endif
+
+  if (flock(fileno(m_file_lock), LOCK_EX | LOCK_NB)) {
+    EUDAQ_THROW("Unable to lock the lockfile: " + lock_path);
+  }
+
 
   std::cout << "Initializing Tektronix MSO64 Producer..." << std::endl;
   // Initialize VISA Resource Manager
@@ -121,20 +126,101 @@ void TexMSO64Producer::DoConfigure(){
         }
         // You can add configuration commands here, e.g., setting up the oscilloscope mode
 
+        const char* command = "*IDN?\n";  // Query for instrument ID
+        ViChar buffer[256] = {0};
+        ViUInt32 retCount;
+
+        // Send command to scope and read the response
+        viWrite(instr, (ViBuf)command, std::strlen(command), VI_NULL);
+        status = viRead(instr, (ViBuf)buffer, sizeof(buffer) - 1, &retCount);
+
+        if (status == VI_SUCCESS || status == VI_SUCCESS_MAX_CNT) {
+            buffer[retCount] = '\0';
+            std::cout << "Instrument response: " << buffer << std::endl;
+        }
+
+
+// ---- Acquisition Setup ----
+
+       const char* s_command = "*RST\n";
+       viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "ACQuire:STATE OFF\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+       // Set acquisition mode to AUTO
+       s_command = "ACQuire:MODe SAMPLE\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "HORizontal:FASTframe:STATE ON\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "HORizontal:FASTframe:COUNt 25000\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+       // Turn OFF CH1, CH2, CH4
+       s_command = "SELect:CH1 OFF\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "SELect:CH2 OFF\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "SELect:CH4 OFF\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+
+       // Turn ON CH3
+       s_command = "SELect:CH3 ON\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "CH3:SCAle 0.2\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "CH3:BANdwidth FULl\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+
+       s_command = "HORizontal:MAIn:SCALe 1.0E-8\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "HORizontal:POSition 22\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       // Set trigger to AUX input
+
+       s_command = "TRIGger:A:MODe NORMal\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "TRIGger:A:TYPe EDGE\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "TRIGGER:A:EDGE:SOURCE AUXiliary\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "TRIGger:AUXLevel 0.09\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       s_command = "TRIGger:A:EDGE:SLOPe RISe\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+       //s_command = ; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
 }
 //----------DOC-MARK-----BEG*RUN-----DOC-MARK----------
 void TexMSO64Producer::DoStartRun(){
   m_exit_of_run = false;
-        std::cout << "Starting Tektronix MSO64 run..." << std::endl;
-        // Reset or configure settings for each new run if needed
+
+  std::cout << "Starting Tektronix MSO64 run..." << std::endl;
+  // Reset or configure settings for each new run if needed
+  viWrite(instr, (ViBuf)"ACQuire:STATE ON\n", 19, VI_NULL);
 }
 //----------DOC-MARK-----BEG*STOP-----DOC-MARK----------
 void TexMSO64Producer::DoStopRun(){
   m_exit_of_run = true;
 
-       std::cout << "Stopping Tektronix MSO64 run..." << std::endl;
-        // Stop or pause any data acquisition
-        // You can also save the data or reset the system here if required
+  std::cout << "Stopping Tektronix MSO64 run..." << std::endl;
+  // Stop or pause any data acquisition
+
+  const char* s_command = "ACQuire:STATE OFF\n";
+  viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+  Sleep(1);  // or use viQueryf to check operation complete
+
+
+
+
+// Set data source to CH3
+  s_command = "DATa:SOURce CH3\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+// Set data range
+  s_command = "DATa:STARt 1\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+  s_command = "DATa:STOP 1250\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+// Set file format to CSV
+  //s_command = "SAVE:WAVeform:FORMat CSV\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+  s_command = "SAVEONEVent:WAVEform:FILEFormat INTERNal\n"; viWrite(instr, (ViBuf)s_command, std::strlen(s_command), VI_NULL);
+
+// Save waveform from CH3 to USB S: drive in CSV format
+  int runNumber = GetRunNumber();
+  int spillNumber = 0;
+  char cmd[150];
+  std::snprintf(cmd, sizeof(cmd),
+              "SAVE:WAVeform CH3, \"S:/run%04d_spill%04d.wfm\"\n",
+              runNumber, spillNumber);
+
+  viWrite(instr, (ViBuf)cmd, std::strlen(cmd), VI_NULL);
+
+  ViChar response[256];
+  viQueryf(instr, "*ESR?\n", "%t", &response);  // Event Status Register
+  std::cout << "Scope ESR: " << response << std::endl;
 
 }
 //----------DOC-MARK-----BEG*RST-----DOC-MARK----------
@@ -150,11 +236,11 @@ void TexMSO64Producer::DoReset(){
   m_ms_busy = std::chrono::milliseconds();
   m_exit_of_run = false;
 
-       std::cout << "Resetting Tektronix MSO64 Producer..." << std::endl;
-        // Reset the instrument or any internal variables here
-        // You can perform a soft reset of the device, e.g., `*RST` SCPI command
-        const char* reset_command = "*RST\n";
-        viWrite(instr, (ViBuf)reset_command, std::strlen(reset_command), VI_NULL);
+  std::cout << "Resetting Tektronix MSO64 Producer..." << std::endl;
+   // Reset the instrument or any internal variables here
+   // You can perform a soft reset of the device, e.g., `*RST` SCPI command
+   const char* reset_command = "*RST\n";
+   viWrite(instr, (ViBuf)reset_command, std::strlen(reset_command), VI_NULL);
 
 
 }
@@ -166,13 +252,13 @@ void TexMSO64Producer::DoTerminate(){
     m_file_lock = 0;
   }
 
-       std::cout << "Terminating Tektronix MSO64 Producer..." << std::endl;
-        if (instr != VI_NULL) {
-            viClose(instr);
-        }
-        if (defaultRM != VI_NULL) {
-            viClose(defaultRM);
-        }
+  std::cout << "Terminating Tektronix MSO64 Producer..." << std::endl;
+   if (instr != VI_NULL) {
+       viClose(instr);
+   }
+   if (defaultRM != VI_NULL) {
+       viClose(defaultRM);
+   }
 }
 //----------DOC-MARK-----BEG*LOOP-----DOC-MARK----------
 void TexMSO64Producer::RunLoop(){
@@ -180,17 +266,18 @@ void TexMSO64Producer::RunLoop(){
   uint32_t trigger_n = 0;
   uint8_t x_pixel = 16;
   uint8_t y_pixel = 16;
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<uint32_t> position(0, x_pixel*y_pixel-1);
-  std::uniform_int_distribution<uint32_t> signal(0, 255);
+  //std::random_device rd;
+  //std::mt19937 gen(rd());
+  //std::uniform_int_distribution<uint32_t> position(0, x_pixel*y_pixel-1);
+  //std::uniform_int_distribution<uint32_t> signal(0, 255);
 
 
   while(!m_exit_of_run){
     auto tp_trigger = std::chrono::steady_clock::now();
     auto tp_end_of_busy = tp_trigger + m_ms_busy;
+    /* 
 
-       const char* command = "*IDN?\n";  // Query for instrument ID
+        const char* command = "*IDN?\n";  // Query for instrument ID
         ViChar buffer[256] = {0};
         ViUInt32 retCount;
 
@@ -219,7 +306,7 @@ void TexMSO64Producer::RunLoop(){
         } else {
             std::cerr << "Failed to read response from instrument." << std::endl;
         }
-
+    */
     std::this_thread::sleep_until(tp_end_of_busy);
 
   } // end   while(!m_exit_of_run){

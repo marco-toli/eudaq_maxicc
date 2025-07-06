@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include "eudaq/Monitor.hh"
 
-#include "configure.h"
+//#include "configure.h"
 
 #include "DataSender.hh"
 #include "DRS_EUDAQ.h"
@@ -30,7 +30,7 @@ void DRSpack_event(void* Event, std::vector<uint8_t> *vec)
   for(int ig = 0; ig <MAX_X742_GROUP_SIZE; ig++) {
 	vec->push_back(tmpEvent->GrPresent[ig]);
   }
- for(int ig = 0; ig <MAX_X742_GROUP_SIZE; ig++) {
+  for(int ig = 0; ig <MAX_X742_GROUP_SIZE; ig++) {
     if(tmpEvent->GrPresent[ig]) {
 	CAEN_DGTZ_X742_GROUP_t *Event_gr = &tmpEvent->DataGroup[ig];
 	for(int ich =0 ; ich <MAX_X742_CHANNEL_SIZE; ich++) {

@@ -10,7 +10,7 @@
 
 #include "CAENDigitizer.h"
 #include <vector>
-#include "paramparser.h"
+//#include "paramparser.h"
 #include <map>
 // shared structure
 #include "FERS_EUDAQ_shm.h"

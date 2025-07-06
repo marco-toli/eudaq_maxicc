@@ -8,7 +8,7 @@
 
 #include "DRS_EUDAQ.h"
 #include "FERS_EUDAQ.h"
-
+#include <set>
 
 class FERSProducerEvent2TTreeEventConverter : public eudaq::TTreeEventConverter {
 public:
@@ -29,82 +29,65 @@ bool FERSProducerEvent2TTreeEventConverter::Converting(eudaq::EventSPC d1, eudaq
     auto ev = std::dynamic_pointer_cast<const eudaq::RawEvent>(d1);
     if (!ev) {
         EUDAQ_THROW("Failed to cast event to RawEvent");
-    }else{
-	//std::cout<<" ------- 8888 ------"<<std::endl;
     }
 
-
-
-    int brd;
-    int PID[16];
-    int iPID;
+    static int PID[18];
+    static float SipmHV[18];
+    static float SipmI[18];
+    static float TempDET[18];
+    static float TempFPGA[18];
+    static SpectEvent_t spect_event[18];
+    static std::set<int> initialized_boards;
 
     uint64_t trigTime[2];
+    trigTime[1] = ev->GetTimestampBegin() / 1000;
 
-    SpectEvent_t spect_event[16];
-    trigTime[1]=ev->GetTimestampBegin()/1000;
     auto block_n_list = ev->GetBlockNumList();
-    for(auto &block_n: block_n_list){
-	std::vector<uint8_t> block = ev->GetBlock(block_n);
-        int index = read_header(&block, &brd, &iPID);
-	PID[brd]=iPID;
-        //std::cout<<"FERS Board= "<<brd<<", PID= "<<PID[brd]<<std::endl;
+    for (auto &block_n : block_n_list) {
+        std::vector<uint8_t> block = ev->GetBlock(block_n);
+        int brd, iPID;
+	float sipmHV,sipmI,tempDET,tempFPGA;
+        int index = read_headerFERS(&block, &brd, &iPID,&sipmHV,&sipmI,&tempDET,&tempFPGA);
 
-        std::vector<uint8_t> data(block.begin()+index, block.end());
-	if(data.size()>0) {
-		spect_event[brd] = FERSunpack_spectevent(&data);
+        // Board index safety check
+        if (brd < 0 || brd >= 18) {
+            std::cerr << "Warning: Invalid board index: " << brd << std::endl;
+            continue;
+        }
 
+        PID[brd] = iPID;
+	SipmHV[brd]=sipmHV;
+	SipmI[brd]=sipmI;
+	TempDET[brd]=tempDET;
+	TempFPGA[brd]=tempFPGA;
 
-		//for(int ich=0;ich<64;ich++)
-		//	std::cout<<spect_event[brd].energyLG[ich]<<std::endl;
+        std::vector<uint8_t> data(block.begin() + index, block.end());
+        if (data.empty()) continue;
 
+        spect_event[brd] = FERSunpack_spectevent(&data);
 
-                TString boardPIDBranchName = TString::Format("FERS_Board%d_PID", brd);
+        // Only initialize branches once per board
+        if (initialized_boards.find(brd) == initialized_boards.end()) {
+            TString base = TString::Format("FERS_Board%d_", brd);
 
-                if (d2->GetListOfBranches()->FindObject(boardPIDBranchName)) {
-                        d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
-                } else {
-                        d2->Branch(boardPIDBranchName, &PID[brd], "PID/I");
-                        d2->SetBranchAddress(boardPIDBranchName, &PID[brd]);
-                }
+            d2->Branch(base + "PID", &PID[brd], "PID/I");
+            d2->Branch(base + "SipmHV", &SipmHV[brd], "SipmHV/F");
+            d2->Branch(base + "SipmI", &SipmI[brd], "SipmI/F");
+            d2->Branch(base + "TempDET", &TempDET[brd], "TempDET/F");
+            d2->Branch(base + "TempFPGA", &TempFPGA[brd], "TempFPGA/F");
+            d2->Branch(base + "tstamp_us", &spect_event[brd].tstamp_us, "tstamp_us/D");
+            d2->Branch(base + "rel_tstamp_us", &spect_event[brd].rel_tstamp_us, "rel_tstamp_us/D");
+            d2->Branch(base + "trigger_id", &spect_event[brd].trigger_id, "trigger_id/g");
+            d2->Branch(base + "chmask", &spect_event[brd].chmask, "chmask/g");
+            d2->Branch(base + "qdmask", &spect_event[brd].qdmask, "qdmask/g");
+            d2->Branch(base + "energyHG", spect_event[brd].energyHG, "energyHG[64]/s");
+            d2->Branch(base + "energyLG", spect_event[brd].energyLG, "energyLG[64]/s");
 
-		TString branch_name = TString::Format("FERS_Board%d_tstamp_us", brd);
+            initialized_boards.insert(brd);
+        }
 
-    		if (d2->GetListOfBranches()->FindObject(branch_name))d2->SetBranchAddress(branch_name, &spect_event[brd].tstamp_us);
-    		else {d2->Branch(branch_name, &spect_event[brd].tstamp_us, "tstamp_us/D"); d2->SetBranchAddress(branch_name, &spect_event[brd].tstamp_us);}
-
-		    branch_name = TString::Format("FERS_Board%d_rel_tstamp_us", brd);
-		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].rel_tstamp_us);
-		    else {d2->Branch(branch_name, &spect_event[brd].rel_tstamp_us, "rel_tstamp_us/D");d2->SetBranchAddress(branch_name, &spect_event[brd].rel_tstamp_us);}
-
-		    branch_name = TString::Format("FERS_Board%d_trigger_id", brd);
-		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].trigger_id);
-		    else {d2->Branch(branch_name, &spect_event[brd].trigger_id, "trigger_id/g"); d2->SetBranchAddress(branch_name, &spect_event[brd].trigger_id);}
-
-		    branch_name = TString::Format("FERS_Board%d_chmask", brd);
-		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].chmask);
-		    else {d2->Branch(branch_name, &spect_event[brd].chmask, "chmask/g");d2->SetBranchAddress(branch_name, &spect_event[brd].chmask);}
-
-		    branch_name = TString::Format("FERS_Board%d_qdmask", brd);
-		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, &spect_event[brd].qdmask);
-		    else {d2->Branch(branch_name, &spect_event[brd].qdmask, "qdmask/g");d2->SetBranchAddress(branch_name, &spect_event[brd].qdmask);}
-
-		    branch_name = TString::Format("FERS_Board%d_energyHG", brd);
-		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyHG);
-		    else {d2->Branch(branch_name, spect_event[brd].energyHG, "energyHG[64]/s");d2->SetBranchAddress(branch_name, spect_event[brd].energyHG);}
-
-		    branch_name = TString::Format("FERS_Board%d_energyLG", brd);
-		    if (d2->GetListOfBranches()->FindObject(branch_name)) d2->SetBranchAddress(branch_name, spect_event[brd].energyLG);
-		    else {d2->Branch(branch_name, spect_event[brd].energyLG, "energyLG[64]/s");d2->SetBranchAddress(branch_name, spect_event[brd].energyLG);}
-
-
-	}
-    } //end block
-
-
-
-
-
+    }
 
     return true;
 }
+
