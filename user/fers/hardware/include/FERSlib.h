@@ -481,11 +481,11 @@ typedef enum {
 * @brief Re-define of Max and min
 * @{
 */
-#ifndef max
-#define max(a,b) ((a) > (b) ? (a) : (b))
+#ifndef mymax
+#define mymax(a,b) ((a) > (b) ? (a) : (b))
 #endif
-#ifndef min 
-#define min(a,b) ((a) < (b) ? (a) : (b))
+#ifndef mymin 
+#define mymin(a,b) ((a) < (b) ? (a) : (b))
 #endif
 /*! @} */
 
