@@ -19,10 +19,10 @@
 #          USB_A4818 X 0 0			Desktop/NIM digitizer through USB->A4818->CONET (X is the PID (product id) of A4818)
 #          USB_A4818_V2718 X 0 BA   VME digitizer through USB-A4818-V2718 (BA = BaseAddress of the VME board, 32 bit hex) (X is the PID (product id) of A4818)
 #          USB_A4818_V3718 X 0 BA   VME digitizer through USB-A4818-V3718 (BA = BaseAddress of the VME board, 32 bit hex) (X is the PID (product id) of A4818)
-OPEN USB 0 0
+#OPEN USB 0 0
 #OPEN USB_A4818 12345 0 0 
 #OPEN USB_A4818_V2718 12345 0 32100000
-#OPEN USB 0 32100000
+OPEN USB 0 DDDD0000
 #OPEN PCI 0 0 0
 #OPEN PCI 0 0 32100000
 
@@ -34,7 +34,7 @@ RECORD_LENGTH  1024
 # options: 0 to 100
 # For x742 there is a delay of about 42 nsec on Fast Trigger TR, and about 115 nsec on TRG-IN; 
 # the post trigger is added to this delay  
-POST_TRIGGER  1
+POST_TRIGGER  50
 
 #PULSE_POLARITY: input signal polarity.
 #options: POSITIVE, NEGATIVE
@@ -44,6 +44,7 @@ PULSE_POLARITY NEGATIVE
 # EXTERNAL_TRIGGER: external trigger input settings. When enabled, the ext. trg. can be either 
 # propagated (ACQUISITION_AND_TRGOUT) or not (ACQUISITION_ONLY) through the TRGOUT
 # options: DISABLED, ACQUISITION_ONLY, ACQUISITION_AND_TRGOUT
+#EXTERNAL_TRIGGER   DISABLED
 EXTERNAL_TRIGGER   ACQUISITION_ONLY
 
 # FAST_TRIGGER: fast trigger input settings. ONLY FOR 742 MODELS. When enabled, the fast trigger is used
@@ -85,7 +86,7 @@ CORRECTION_LEVEL AUTO
 #   1 = 2.5 GHz
 #   2 = 1 GHz
 #   3 = 750 MHz
-DRS4_FREQUENCY 0
+DRS4_FREQUENCY 2
 
 # OUTPUT_FILE_FORMAT: output file can be either ASCII (column of decimal numbers) or binary 
 # (2 bytes per sample)
@@ -116,6 +117,17 @@ FPIO_LEVEL  NIM
 # WRITE_REGISTER 1080 0000 0100
 # Example: Set register 1080 to the value of 0x45:
 # WRITE_REGISTER 1080 45 FFFFFFFF
+
+# ENABLE TRANSPARENT MODE
+# WRITE_REGISTER 8000 FFFF 2000
+
+# ENABLE SELF TRIGGER ON ANY CH 0-7
+# WRITE_REGISTER 10A8 FF FF
+# SET THE TRIGGER THRESHOLD ON CH0
+# WRITE_REGISTER 1080 09C4 FFFF
+
+# BUSY ON TRG_OUT
+WRITE_REGISTER 811C 000D0000 FFFFFFFF
 
 # ----------------------------------------------------------------
 # Individual Settings 
@@ -152,19 +164,19 @@ DC_OFFSET              0
 
 [0]
 ENABLE_INPUT           YES
-#DC_OFFSET              10
-#GRP_CH_DC_OFFSET       3,0,0,0,0,0,0,0 
+DC_OFFSET              0
+GRP_CH_DC_OFFSET       -13,-13,-13,-13,-13,-13,-13,-13 
 
 [1]
-ENABLE_INPUT           YES
+ENABLE_INPUT           NO
 
 
 [2]
-ENABLE_INPUT           YES
+ENABLE_INPUT           NO
 
 
 [3]
-ENABLE_INPUT           YES
+ENABLE_INPUT           NO
 
 
 # ----------------------------------------------------------------
