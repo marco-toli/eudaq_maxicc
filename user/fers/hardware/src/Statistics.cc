@@ -508,8 +508,8 @@ int CreateStatistics(int nb, int nch, int *AllocatedSize)
 		
 		// Allocate histograms form file 
 		int maxnbin = J_cfg.EHistoNbin;
-		maxnbin = max(maxnbin, J_cfg.ToAHistoNbin);
-		maxnbin = max(maxnbin, J_cfg.ToTHistoNbin);
+		maxnbin = mymax(maxnbin, J_cfg.ToAHistoNbin);
+		maxnbin = mymax(maxnbin, J_cfg.ToTHistoNbin);
 		CreateHistogram1D(maxnbin, "", "", "", "Cnt", &Stats.H1_File[i]);
 		*AllocatedSize += maxnbin*sizeof(uint32_t);
 		// Allocate stair case from file (similar to histogram 1D but threated in a different way)
