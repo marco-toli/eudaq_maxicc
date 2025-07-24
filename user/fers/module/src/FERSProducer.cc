@@ -320,8 +320,8 @@ void FERSProducer::DoConfigure(){
 	int ret = -1; // to store return code from calls to fers
 	ret = FERS_LoadConfigFile(const_cast<char*>(fers_conf_filename.c_str()));
 
-        if (ret != 0)
-           EUDAQ_THROW("Cannot load FERS configuration from file " + fers_conf_filename);
+    if (ret != 0)
+       EUDAQ_THROW("Cannot load FERS configuration from file " + fers_conf_filename);
 
 
 	//fers_hv_vbias = conf->Get("FERS_HV_Vbias", 28.);
@@ -343,8 +343,8 @@ void FERSProducer::DoConfigure(){
 			uint16_t LGped[64] = {0};
 			uint16_t HGped[64] = {0};
 
-	                char date[20];
-	                uint16_t DCoffset[4];
+	        char date[20];
+	        uint16_t DCoffset[4];
 			uint16_t LGped_check[64] = {0};
 			uint16_t HGped_check[64] = {0};
 			ret = read_pedestal(fers_ped_filename.c_str(), FERS_pid(shmp->handle[fers_group][kbrd]), LGped, HGped);
@@ -353,8 +353,8 @@ void FERSProducer::DoConfigure(){
 			//FERS_EnablePedestalCalibration(shmp->handle[fers_group][brd], 1);
 
 
-                        FERS_ReadPedestalsFromFlash(shmp->handle[fers_group][kbrd], date, LGped_check, HGped_check, DCoffset);
-	                std::cout <<"Ped FERS PID = "<<FERS_pid(shmp->handle[fers_group][kbrd])<<std::endl;
+            FERS_ReadPedestalsFromFlash(shmp->handle[fers_group][kbrd], date, LGped_check, HGped_check, DCoffset);
+	        std::cout <<"Ped FERS PID = "<<FERS_pid(shmp->handle[fers_group][kbrd])<<std::endl;
 			for (int kk = 0;kk<64;kk++)
 				std::cout <<kk<< " LG = "<<LGped[kk]<<", HG = "<<HGped[kk]
 				<< " LGread = "<<LGped_check[kk]<<", HGread = "<<HGped_check[kk]
@@ -362,7 +362,7 @@ void FERSProducer::DoConfigure(){
 		}
 
 
-	        ret |= FERS_configure(shmp->handle[fers_group][kbrd], CFG_HARD);
+	    ret |= FERS_configure(shmp->handle[fers_group][kbrd], CFG_HARD);
 		//std::cout<<"3333 - 3333 FERScfg[6]->HV_IndivAdj[52] = "<<FERScfg[6]->HV_IndivAdj[52]<<std::endl;
 
 		if (ret == 0) {
@@ -430,8 +430,8 @@ void FERSProducer::DoConfigure(){
 void FERSProducer::DoStartRun(){
 	m_exit_of_run = false;
 
-  std::chrono::time_point<std::chrono::high_resolution_clock> tp_start_aq = std::chrono::high_resolution_clock::now();
-  shmp->FERS_Aqu_start_time_us=tp_start_aq;
+	std::chrono::time_point<std::chrono::high_resolution_clock> tp_start_aq = std::chrono::high_resolution_clock::now();
+	shmp->FERS_Aqu_start_time_us=tp_start_aq;
 
 
 	// here the hardware is told to startup

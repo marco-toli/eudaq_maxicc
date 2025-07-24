@@ -80,16 +80,20 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
   m_conn_evque[idx].push_back(evsp);
 
   uint32_t trigger_n = -1;
+  EUDAQ_INFO("initializing trigger_n count..");
   for(auto &conn_evque: m_conn_evque){
     if(conn_evque.second.empty())
       return;
     else{
+    std::cout << "trigger_n after auto = " << trigger_n << std::endl;  
       uint32_t trigger_n_ev = conn_evque.second.front()->GetTriggerN();
+      std::cout << "trigger_n= " << trigger_n << " , trigger_n_ev = " << trigger_n_ev << std::endl;      
       if(trigger_n_ev< trigger_n)
-	trigger_n = trigger_n_ev;
+	      trigger_n = trigger_n_ev;
     }
   }
 
+  std::cout << "initialized...  trigger_n= " << trigger_n <<  " \n...  building ev sync" << std::endl;
   auto ev_sync = eudaq::Event::MakeUnique("FERSDRS");
   ev_sync->SetFlagPacket();
   ev_sync->SetTriggerN(trigger_n);
@@ -100,7 +104,39 @@ void FERSDataCollector::DoReceive(eudaq::ConnectionSPC idx, eudaq::EventSP evsp)
       conn_evque.second.pop_front();
     }
   }
-  
+
+//inizio pezzo copilot
+// for (const auto &conn_evque : m_conn_evque) {
+//   std::cout << "Connessione " << conn_evque.first << " - dimensione coda: " << conn_evque.second.size() << std::endl;
+//   std::cout << "TriggerN nella coda: ";
+//   for (const auto &ev : conn_evque.second) {
+//     std::cout << ev->GetTriggerN() << " ";
+//   }
+//   std::cout << std::endl;
+// }
+
+//   for(auto &conn_evque: m_conn_evque){
+//   while (!conn_evque.second.empty() &&
+//          conn_evque.second.front()->GetTriggerN() < trigger_n) {
+//     // Scarta eventi vecchi che non potranno mai essere sincronizzati
+//     conn_evque.second.pop_front();
+//   }
+//   if(conn_evque.second.empty() ||
+//      conn_evque.second.front()->GetTriggerN() != trigger_n) {
+//     // Non tutti hanno l'evento giusto, aspetta
+//     return;
+//   }
+// }
+// // Ora tutte le code hanno in testa l'evento giusto, puoi sincronizzare!
+// auto ev_sync = eudaq::Event::MakeUnique("FERSDRS");
+// ev_sync->SetFlagPacket();
+// ev_sync->SetTriggerN(trigger_n);
+// for(auto &conn_evque: m_conn_evque){
+//   ev_sync->AddSubEvent(conn_evque.second.front());
+//   conn_evque.second.pop_front();
+// }
+//fine pezzo copilot 
+
   if(!m_conn_inactive.empty()){
     std::set<eudaq::ConnectionSPC> conn_inactive_empty;
     for(auto &conn: m_conn_inactive){
