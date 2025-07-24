@@ -1433,7 +1433,7 @@ int LLtdl_InitTDLchains(int cindex, float DelayAdjust[FERSLIB_MAX_NTDL][FERSLIB_
 			flength = (!InitDelayAdjust[cindex] || (TDL_FiberDelayAdjust[cindex][chain][i] == 0)) ? DEFAULT_FIBER_LENGTH : TDL_FiberDelayAdjust[cindex][chain][i];
 			del_sum += FIBER_DELAY(flength);
 		}
-		max_delay = max(del_sum, max_delay);
+		max_delay = mymax(del_sum, max_delay);
 	}
 	max_delay = (float)ceil(max_delay);
 	

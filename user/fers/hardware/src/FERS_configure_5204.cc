@@ -447,9 +447,9 @@ static int Configure_Radioroc(int handle) {
 	// Common settings
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_ASIC_bias, 2, 0x74); //  trigger threshold calibration bias = 7 (suggested by Weeroc)
 
-	uint32_t th1 = min(FERScfg[brd]->TD1_CoarseThreshold, 1023);
-	uint32_t th2 = min(FERScfg[brd]->TD2_CoarseThreshold, 1023);
-	uint32_t thq = min(FERScfg[brd]->QD_CoarseThreshold, 1023);
+	uint32_t th1 = mymin(FERScfg[brd]->TD1_CoarseThreshold, 1023);
+	uint32_t th2 = mymin(FERScfg[brd]->TD2_CoarseThreshold, 1023);
+	uint32_t thq = mymin(FERScfg[brd]->QD_CoarseThreshold, 1023);
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_common_cfg, 1, th1 & 0xFF);
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_common_cfg, 2, ((th2 & 0x3F) << 2) | (th1 >> 8) & 0x3);
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_common_cfg, 3, ((thq & 0xF) << 4) | (th2 >> 6) & 0xF);
@@ -458,12 +458,12 @@ static int Configure_Radioroc(int handle) {
 
 	// Channel Settings (probe setting will be applied by the function ConfigureProbe5204)
 	for (i = 0; i < 64; i++) {
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 0, (uint8_t)(min(FERScfg[brd]->HV_IndivAdj[i], 0xFF)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 1, (uint8_t)((PATcomp << 6) | min(FERScfg[brd]->T_Gain[i], 0x3F)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 2, (uint8_t)((min(FERScfg[brd]->LG_Gain[i], 0xF) << 4) | min(FERScfg[brd]->HG_Gain[i], 0xF)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 3, (uint8_t)((min(FERScfg[brd]->LG_ShapingTime_ind[i], 0xF) << 4) | min(FERScfg[brd]->HG_ShapingTime_ind[i], 0xF)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 4, (uint8_t)(min(FERScfg[brd]->TD1_FineThreshold[i], 0x3F)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 5, (uint8_t)(min(FERScfg[brd]->TD2_FineThreshold[i], 0x3F)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 0, (uint8_t)(mymin(FERScfg[brd]->HV_IndivAdj[i], 0xFF)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 1, (uint8_t)((PATcomp << 6) | mymin(FERScfg[brd]->T_Gain[i], 0x3F)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 2, (uint8_t)((mymin(FERScfg[brd]->LG_Gain[i], 0xF) << 4) | mymin(FERScfg[brd]->HG_Gain[i], 0xF)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 3, (uint8_t)((mymin(FERScfg[brd]->LG_ShapingTime_ind[i], 0xF) << 4) | mymin(FERScfg[brd]->HG_ShapingTime_ind[i], 0xF)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 4, (uint8_t)(mymin(FERScfg[brd]->TD1_FineThreshold[i], 0x3F)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 5, (uint8_t)(mymin(FERScfg[brd]->TD2_FineThreshold[i], 0x3F)));
 		uint8_t en_TD1 = (uint8_t)((FERScfg[brd]->TD1_Mask >> i) & 1);
 		uint8_t en_TD2 = (uint8_t)((FERScfg[brd]->TD2_Mask >> i) & 1);
 		uint8_t en_QD =  (uint8_t)((FERScfg[brd]->QD_Mask >> i) & 1);
@@ -500,9 +500,9 @@ static int Configure_Psiroc(int handle) {
 	uint8_t enmask;
 
 
-	uint32_t th_td = min(FERScfg[brd]->TD_CoarseThreshold, 1023);
-	uint32_t th_totd = min(FERScfg[brd]->TOTD_CoarseThreshold, 1023);
-	uint32_t thq = min(FERScfg[brd]->QD_CoarseThreshold, 1023);
+	uint32_t th_td = mymin(FERScfg[brd]->TD_CoarseThreshold, 1023);
+	uint32_t th_totd = mymin(FERScfg[brd]->TOTD_CoarseThreshold, 1023);
+	uint32_t thq = mymin(FERScfg[brd]->QD_CoarseThreshold, 1023);
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_common_cfg, 1, th_td & 0xFF);
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_common_cfg, 2, ((th_totd & 0x3F) << 2) | (th_td >> 8) & 0x3);
 	ret |= FERS_XROC_WriteRegister(handle, a_XR_common_cfg, 3, ((thq & 0xF) << 4) | (th_totd >> 6) & 0xF);
@@ -512,13 +512,13 @@ static int Configure_Psiroc(int handle) {
 
 	// Channel Settings (probe setting will be applied by the function ConfigureProbe5204)
 	for (i = 0; i < 64; i++) {
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 0, (uint8_t)(min(FERScfg[brd]->PAQ_Gain[i], 0x3F) | ((FERScfg[brd]->InputPolarity[i] & 0x1) << 6)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 1, (uint8_t)(min(FERScfg[brd]->PAQ_Comp[i], 0x3F)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 0, (uint8_t)(mymin(FERScfg[brd]->PAQ_Gain[i], 0x3F) | ((FERScfg[brd]->InputPolarity[i] & 0x1) << 6)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 1, (uint8_t)(mymin(FERScfg[brd]->PAQ_Comp[i], 0x3F)));
 		// ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 2, (uint8_t)()); HACK CTIN to do... (shaper Tau range, detector leakage current, fast chaper compens)
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 3, (uint8_t)((min(FERScfg[brd]->LG_ShapingTime_ind[i], 0xF) << 4) | min(FERScfg[brd]->HG_ShapingTime_ind[i], 0xF)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 3, (uint8_t)((mymin(FERScfg[brd]->LG_ShapingTime_ind[i], 0xF) << 4) | mymin(FERScfg[brd]->HG_ShapingTime_ind[i], 0xF)));
 
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 4, (uint8_t)(min(FERScfg[brd]->TD_FineThreshold[i], 0x3F)));
-		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 5, (uint8_t)(min(FERScfg[brd]->TOTD_FineThreshold[i], 0x3F)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 4, (uint8_t)(mymin(FERScfg[brd]->TD_FineThreshold[i], 0x3F)));
+		ret |= FERS_XROC_WriteRegister(handle, a_XR_ChControl(i), 5, (uint8_t)(mymin(FERScfg[brd]->TOTD_FineThreshold[i], 0x3F)));
 		uint8_t en_TD = (uint8_t)((FERScfg[brd]->TD_Mask >> i) & 1);
 		uint8_t en_TOTD = (uint8_t)((FERScfg[brd]->TOTD_Mask >> i) & 1);
 		uint8_t en_QD = (uint8_t)((FERScfg[brd]->QD_Mask >> i) & 1);

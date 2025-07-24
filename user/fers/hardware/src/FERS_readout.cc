@@ -810,8 +810,8 @@ static int FERS_DecodeEvent_5202(int handle, uint32_t* EvBuff_d, int nb, int* Da
 				}
 				// negative numbers (due to pedestal subtraction) are forced to 0 
 				// number exceeding max_range (due to pedestal subtraction) are forced to  max_range
-				SpectEvent[h].energyLG[ch] = min(max(0, lenergy), MaxEnergyRange);
-				SpectEvent[h].energyHG[ch] = min(max(0, henergy), MaxEnergyRange);
+				SpectEvent[h].energyLG[ch] = mymin(mymax(0, lenergy), MaxEnergyRange);
+				SpectEvent[h].energyHG[ch] = mymin(mymax(0, henergy), MaxEnergyRange);
 			}
 		}
 		if ((*DataQualifier & DTQ_TIMING) && (pnt < size)) {
@@ -1185,8 +1185,8 @@ static int FERS_DecodeEvent_5204(int handle, uint32_t *EvBuff_d, int nb, int *Da
 				}
 				// negative numbers (due to pedestal subtraction) are forced to 0 
 				// number exceeding max_range (due to pedestal subtraction) are forced to  max_range
-				SpectEvent[h].energyLG[ch] = min(max(0, lenergy), MaxEnergyRange);
-				SpectEvent[h].energyHG[ch] = min(max(0, henergy), MaxEnergyRange);
+				SpectEvent[h].energyLG[ch] = mymin(mymax(0, lenergy), MaxEnergyRange);
+				SpectEvent[h].energyHG[ch] = mymin(mymax(0, henergy), MaxEnergyRange);
 			}
 		}
 		if ((*DataQualifier & DTQ_TIMING) && (pnt < size)) {

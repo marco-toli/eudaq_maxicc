@@ -235,9 +235,9 @@ int FERS_Set_DiscrThreshold(int handle, int Adapter_ch, float thr_mv, int brd)
 
 	if (Adapter_ch == 0) {
 		thr0a = ((ThrCalibLoaded[b] && !ThrCalibIsDisabled[b])) ? thr_mv + CalibratedThrOffset[b][17] : thr_mv;
-		thr0a = (float)max(min(thr0a, 1249), -1249);
+		thr0a = (float)mymax(mymin(thr0a, 1249), -1249);
 		thr0b = ((ThrCalibLoaded[b] && !ThrCalibIsDisabled[b])) ? thr_mv + CalibratedThrOffset[b][0] : thr_mv;
-		thr0b = (float)max(min(thr0b, 1249), -1249);
+		thr0b = (float)mymax(mymin(thr0b, 1249), -1249);
 		for (i = 0; i < 2; i++) {
 			addr = 0x30 | i;
 			dac16 = (i == 0) ? A5256_mV_to_DAC(thr0a) << 4 : A5256_mV_to_DAC(thr0b) << 4;		// DAC uses 16 bit format (4 LSBs = 0)
@@ -247,7 +247,7 @@ int FERS_Set_DiscrThreshold(int handle, int Adapter_ch, float thr_mv, int brd)
 
 	} else {
 		thr = ((ThrCalibLoaded[b] && !ThrCalibIsDisabled[b])) ? thr_mv + CalibratedThrOffset[b][Adapter_ch] : thr_mv;
-		thr = (float)max(min(thr, 1249), -1249);
+		thr = (float)mymax(mymin(thr, 1249), -1249);
 		if (FERScfg[brd]->AdapterType == ADAPTER_A5256) {
 			addr = 0x30 | (A5256_ADA2DAC[Adapter_ch] & 0xF);
 			dac16 = A5256_mV_to_DAC(thr) << 4;	 // DAC uses 16 bit format (4 LSBs = 0)
