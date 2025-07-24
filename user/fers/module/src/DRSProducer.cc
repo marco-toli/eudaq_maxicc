@@ -48,7 +48,7 @@ private:
   int PID_DRS[16];
 
   WaveDumpConfig_t   WDcfg;
-  int V4718_PID =58232; // yes!, hardcoded ...
+  int V1718_PID =1002; // yes!, hardcoded ...
   int ret, NBoardsDRS =0 ;
   uint32_t AllocatedSize, BufferSize, NumEvents;
   CAEN_DGTZ_BoardInfo_t   BoardInfo;
@@ -135,8 +135,11 @@ void DRSProducer::DoInitialise(){
   char BA[100];
 
   for( int brd = 0 ; brd<NBoardsDRS;brd++) {
-          std::sprintf(BA,"%s0000", ss[brd]);
-	  ret = CAEN_DGTZ_OpenDigitizer2(CAEN_DGTZ_USB_V4718, (void *)&V4718_PID, 0 , std::stoi(BA, 0, 16), &handle);
+          // std::sprintf(BA,"%s0000", ss[brd]);
+	  // ret = CAEN_DGTZ_OpenDigitizer2(CAEN_DGTZ_USB_V4718, (void *)&V4718_PID, 0 , std::stoi(BA, 0, 16), &handle);
+	  std::sprintf(BA,"0x%s0000", ss[brd]);
+	  ret = CAEN_DGTZ_OpenDigitizer(CAEN_DGTZ_USB, 0, 0, std::stoul(std::string(BA), 0, 16), &handle);
+
 	  if (ret) {
 		EUDAQ_THROW("Unable to open DRS at 0x"+std::string(ss[brd])+", ret = " + std::to_string(ret));
 	  }
@@ -414,6 +417,7 @@ void DRSProducer::RunLoop(){
        }
 
        shmp->nevtDRS[brd] = (int)NumEvents;
+       std::cout << "DRS: Board " << brd << " has " << NumEvents << " events in the buffer." << std::endl;
 
 
        for(int i = 0; i < (int)NumEvents; i++) {
@@ -426,7 +430,7 @@ void DRSProducer::RunLoop(){
 	        EUDAQ_THROW("DRS: CAEN_DGTZ_DecodeEvent failed");
 	  }
 
-          Event742->DataGroup[1].TriggerTimeTag = EventInfo.EventCounter; // A workaround ...
+          Event742->DataGroup[0].TriggerTimeTag = EventInfo.EventCounter; // A workaround ...
 
 	  auto copied_event = DRSProducer::deep_copy_event(Event742); // Fix for shallow copy in CAEN DIgitizer
 
@@ -444,7 +448,7 @@ void DRSProducer::RunLoop(){
 
     uint32_t block_id = m_plane_id;
 
-    int Nevt = 128;
+    int Nevt = 1024;
 
     for( int brd = 0 ; brd<NBoardsDRS;brd++) {
 	int qsize = m_conn_evque[brd].size();
@@ -462,7 +466,7 @@ void DRSProducer::RunLoop(){
 
             trigger_n=-1;
 	    for(auto &conn_evque: m_conn_evque){
-	        int trigger_n_ev = conn_evque.second.front()->DataGroup[1].TriggerTimeTag ;  // DRS Ev counter is stored instead
+	        int trigger_n_ev = conn_evque.second.front()->DataGroup[0].TriggerTimeTag ;  // DRS Ev counter is stored instead
 
         	if(trigger_n_ev< trigger_n||trigger_n<0)
 	          trigger_n = trigger_n_ev;
@@ -477,13 +481,13 @@ void DRSProducer::RunLoop(){
 	    	CAEN_DGTZ_X742_EVENT_t* ev_front = conn_evque.second.front();
 		int ibrd = conn_evque.first;
 
-		if (ev_front->DataGroup[1].TriggerTimeTag > shmp->DRS_last_trigID[ibrd]){
+		if (ev_front->DataGroup[0].TriggerTimeTag > shmp->DRS_last_trigID[ibrd]){
 	                shmp->DRS_last_event_time_us=std::chrono::high_resolution_clock::now();
-			shmp->DRS_last_trigID[ibrd]= ev_front->DataGroup[1].TriggerTimeTag;
+			shmp->DRS_last_trigID[ibrd]= ev_front->DataGroup[0].TriggerTimeTag;
 		}
 
                 std::cout<<"---1111---Evt= "<<ievt<<", brd= "<<ibrd
-		<<", trig= "<<ev_front->DataGroup[1].TriggerTimeTag <<std::endl;
+		<<", trig= "<<ev_front->DataGroup[0].TriggerTimeTag <<std::endl;
 
 		//auto nowT = std::chrono::system_clock::now();
 		//std::time_t time = std::chrono::system_clock::to_time_t(nowT);
@@ -493,7 +497,7 @@ void DRSProducer::RunLoop(){
               	//	<< std::setfill('0') << std::setw(3) << ms.count() << '\n';
 
 
- 		if((ev_front->DataGroup[1].TriggerTimeTag) == trigger_n){
+ 		if((ev_front->DataGroup[0].TriggerTimeTag) == trigger_n){
       			m_conn_ev[ibrd]= *ev_front;
 			m_allocated_events.push_back(ev_front);
 			conn_evque.second.pop_front();
