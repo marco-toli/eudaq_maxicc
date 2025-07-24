@@ -261,6 +261,7 @@ int GetMoreBoardInfo(int handle, CAEN_DGTZ_BoardInfo_t BoardInfo, WaveDumpConfig
         }
         break;
     case CAEN_DGTZ_XX742_FAMILY_CODE:
+      printf("BBBBBBBBBBBBBBBBBBBBBB form factor: %ld\n",BoardInfo.FormFactor);
         switch( BoardInfo.FormFactor) {
         case CAEN_DGTZ_VME64_FORM_FACTOR:
         case CAEN_DGTZ_VME64X_FORM_FACTOR:
@@ -460,9 +461,12 @@ int DoProgramDigitizer(int handle, WaveDumpConfig_t* WDcfg, CAEN_DGTZ_BoardInfo_
             }
         }
     }
+    printf("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA qui %ld %ld\n",BoardInfo.FamilyCode,CAEN_DGTZ_XX742_FAMILY_CODE);
     if (BoardInfo.FamilyCode == CAEN_DGTZ_XX742_FAMILY_CODE) {
-        for(i=0; i<(WDcfg->Nch/8); i++) {
-            ret |= CAEN_DGTZ_SetDRS4SamplingFrequency(handle, WDcfg->DRS4Frequency);
+      printf("Nch: %d\n",WDcfg->Nch);
+      for(i=0; i<(WDcfg->Nch/8); i++) {
+	  printf("Setting frequency %d\n",WDcfg->DRS4Frequency);
+	  ret |= CAEN_DGTZ_SetDRS4SamplingFrequency(handle, WDcfg->DRS4Frequency);
             ret |= CAEN_DGTZ_SetGroupFastTriggerDCOffset(handle,i,WDcfg->FTDCoffset[i]);
             ret |= CAEN_DGTZ_SetGroupFastTriggerThreshold(handle,i,WDcfg->FTThreshold[i]);
         }
@@ -511,7 +515,9 @@ int ProgramDigitizerWithRelativeThreshold(int handle, WaveDumpConfig_t* WDcfg, C
 *   \return  0 = Success; negative numbers are error codes
 */
 int ProgramDigitizer(int handle, WaveDumpConfig_t WDcfg, CAEN_DGTZ_BoardInfo_t BoardInfo) {
-    int32_t ch;
+   static_cast<CAEN_DGTZ_ErrorCode>(GetMoreBoardInfo(handle,BoardInfo, &WDcfg));                                                                                     
+
+   int32_t ch;
     for (ch = 0; ch < (int32_t)BoardInfo.Channels; ch++) {
         if (WDcfg.EnableMask & (1 << ch) && WDcfg.Version_used[ch] == 1)
             return ProgramDigitizerWithRelativeThreshold(handle, &WDcfg, BoardInfo);

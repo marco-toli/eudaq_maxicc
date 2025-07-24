@@ -197,9 +197,12 @@ int ParseConfigFile(FILE *f_ini, WaveDumpConfig_t *WDcfg)
 
         // Acquisition Frequency (X742 only)
 		if (strstr(str, "DRS4_FREQUENCY")!=NULL) {
+	       
             int PrevDRS4Freq = WDcfg->DRS4Frequency;
             int freq;
+	    
             read = fscanf(f_ini, "%d", &freq);
+	    printf("Read DRS freq from config: %d",freq);
             WDcfg->DRS4Frequency = (CAEN_DGTZ_DRS4Frequency_t)freq;
             if(PrevDRS4Freq != WDcfg->DRS4Frequency)
                 ret |= (0x1 << CFGRELOAD_CORRTABLES_BIT);
