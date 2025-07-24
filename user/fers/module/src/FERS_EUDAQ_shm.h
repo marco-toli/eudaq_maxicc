@@ -25,7 +25,7 @@
 #include <chrono>
 
 
-#define SHM_KEY 0x12345
+#define SHM_KEY 0x54321
 #define MAXCHAR 30 // max size of chars in following struct. DON'T MAKE IT TOO BIG!!!
 struct shmseg {
         // FERS
