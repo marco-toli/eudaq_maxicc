@@ -1,0 +1,47 @@
+{
+  "digitizer": {
+        "group0": {            
+            "ch0": {
+                "polarity": -1,
+                "type": "wcR",
+                "threshold": 0.5
+            },
+            "ch1": {
+                "polarity": -1,
+                "type": "wcL",
+                "threshold": 0.5
+            },
+            "ch2": {
+                "polarity": -1,
+                "type": "wcB",
+                "threshold": 0.5
+            },
+            "ch3": {
+                "polarity": -1,
+                "type": "wcT",
+                "threshold": 0.5
+            },
+            "ch4": {
+                "polarity": -1,
+                "type": "SiPM",
+                "threshold": 0.5
+            },
+            "ch5": {
+                "polarity": -1,
+                "type": "SiPM",
+                "threshold": 0.5
+            },         	    
+            "ch6": {
+                "polarity": -1,
+                "type": "SiPM",
+                "threshold": 0.5
+            },         	    
+            "ch7": {
+                "polarity": -1,
+                "type": "SiPM",
+                "threshold": 0.5
+            }            	                	    
+
+        }
+    }    
+}
