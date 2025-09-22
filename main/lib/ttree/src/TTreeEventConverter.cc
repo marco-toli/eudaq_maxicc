@@ -14,7 +14,7 @@ namespace eudaq{
     }
     uint32_t d2_flag;
     if(d1->IsFlagPacket()){
-      EUDAQ_INFO("Converting the inputfile to a root file ");
+      //EUDAQ_INFO("Converting the inputfile to a root file ");
       uint32_t run_n = (d1->GetRunN());
       uint32_t event_n = (d1->GetEventN());
       if (!d2->GetListOfBranches()->FindObject("run_n")) 
