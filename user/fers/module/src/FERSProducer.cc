@@ -222,7 +222,7 @@ void FERSProducer::DoInitialise(){
 	  char connection_path[50];
 
 	  strcpy(ip_address, fers_ip_address.c_str());
-	  sprintf(connection_path,"eth:%s",ip_address);
+	  sprintf(connection_path,"usb:%s",ip_address);
 
           char cpath[100];
 	  FERS_Get_CncPath(connection_path, cpath);
@@ -407,7 +407,8 @@ void FERSProducer::DoConfigure(){
 			+" acqmode="+std::to_string(WDcfg.AcquisitionMode));
 			//std::this_thread::sleep_for(std::chrono::seconds(1));
 			sleep(1);
-			FERS_HV_Set_OnOff(shmp->handle[fers_group][kbrd], 1); // set HV on
+			FERS_HV_Set_OnOff(shmp->HVbias[fers_group][kbrd], 1); // set HV on
+			sleep(5);
 		} else {
 			EUDAQ_THROW("HV bias NOT set");
 		}
