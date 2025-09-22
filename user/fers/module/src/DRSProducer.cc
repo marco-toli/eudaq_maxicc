@@ -129,7 +129,7 @@ void DRSProducer::DoInitialise(){
           if (NBoardsDRS == 20) break;
         }
         strcpy(ss[NBoardsDRS++], s);
-  EUDAQ_INFO("DRS: found "+std::to_string(NBoardsDRS)+ " addresses in fers.ini"
+  EUDAQ_INFO("DRS: found "+std::to_string(NBoardsDRS)+ " addresses in the config.ini file"
                 );
 
   char BA[100];

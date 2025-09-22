@@ -6,7 +6,7 @@ killall -9 euCliMonitor
 killall -9 euLog
 killall -9 euRun
 
-BINPATH=/home/maxiccdaq/DAQ/eudaq_tb2024/bin
+BINPATH=/home/maxiccdaq/DAQ/eudaq_maxicc/bin
 
 $BINPATH/euRun &
 sleep 0.3
@@ -22,6 +22,12 @@ sleep 1
 
 $BINPATH/euCliProducer -n FERSProducer -t my_fers0 &
 sleep 1
+
+#$BINPATH/euCliProducer -n FERSProducer -t my_fers1 &
+#sleep 1
+
+#$BINPATH/euCliProducer -n FERSProducer -t my_fers2 &
+#sleep 1
 
 $BINPATH/euCliProducer -n DRSProducer -t my_drs0 &
 
