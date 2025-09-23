@@ -257,23 +257,25 @@ for ch in chList:
 #-------------------------------------------------------
 h_Ene_FERS_LG = {}
 h_Ene_FERS_HG = {}
+h2_Map_FERS_LG = {}
 h2_Map_FERS_HG = {}
 
-chFERSmask = [21,26,28,33,34,39,43,46,29,35]
+chFERSmask = [21,26,28,33,34,39,43,46,29,35,36]
 
 for board in range(len(all_fers_hg.items())):
     branch_name_hg = f"FERS_Board{board}_energyHG"
     branch_name_lg = f"FERS_Board{board}_energyLG"
     all_fers_hg[branch_name_hg] = np.vstack(all_fers_hg[branch_name_hg])
     all_fers_lg[branch_name_lg] = np.vstack(all_fers_lg[branch_name_lg])
+    h2_Map_FERS_LG[branch_name_lg] = ROOT.TH2F(f"hMAP_{branch_name_lg}", f"hMAP_{branch_name_lg};X;Y", 9,0,9,9,0,9)
     h2_Map_FERS_HG[branch_name_hg] = ROOT.TH2F(f"hMAP_{branch_name_hg}", f"hMAP_{branch_name_hg};X;Y", 9,0,9,9,0,9)
 
     if (board == 1):
         continue
+    
     for ch in range(all_fers_lg[branch_name_lg].shape[1]):
-        if (ch not in chFERSmask):
-            continue
-    #     pos = find_position_in_map(fers[f"board{board}"]["map"], ch)
+        pos = find_position_in_map(fers[f"board{board}"]["map"], ch)
+        print(pos)
     #     if pos is None: 
     #         continue
 
@@ -281,27 +283,41 @@ for board in range(len(all_fers_hg.items())):
         h_Ene_FERS_LG[ch] = ROOT.TH1F(f"h_Ene_FERS_LG_{ch}", f"Channel {ch};Value;Counts", 8000, 0, 8000)
         valuesLG = all_fers_lg[branch_name_lg][:, ch]
         h_Ene_FERS_LG[ch].FillN(len(valuesLG), array("d", valuesLG), array("d", np.ones_like(valuesLG)))
-        cFERS_LG = ROOT.TCanvas(f"c{branch_name_lg}_ch{ch}", f"c{branch_name_lg}_ch{ch}", 500, 500)
-        h_Ene_FERS_LG[ch].Draw()
-        cFERS_LG.SetLogy()
-        cFERS_LG.SaveAs(f"{path_plots_fers}/{branch_name_lg}_ch{ch}.png")
-
+        
         # HG
         h_Ene_FERS_HG[ch] = ROOT.TH1F(f"h_Ene_FERS_HG_{ch}", f"Channel {ch};Value;Counts", 8000, 0, 8000)
         valuesHG = all_fers_hg[branch_name_hg][:, ch]
         h_Ene_FERS_HG[ch].FillN(len(valuesHG), array("d", valuesHG), array("d", np.ones_like(valuesHG)))
+
+        if (pos is not None):
+            h2_Map_FERS_LG[branch_name_lg].Fill(pos[0], pos[1], np.mean(valuesLG))
+            h2_Map_FERS_HG[branch_name_hg].Fill(pos[0], pos[1], np.mean(valuesHG))
+        
+        if (ch not in chFERSmask):
+            continue
+
+
+        cFERS_LG = ROOT.TCanvas(f"c{branch_name_lg}_ch{ch}", f"c{branch_name_lg}_ch{ch}", 500, 500)
+        h_Ene_FERS_LG[ch].Draw()
+        cFERS_LG.SetLogy()        
+        cFERS_LG.SaveAs(f"{path_plots_fers}/{branch_name_lg}_ch{ch}.png")
+        del cFERS_LG
+        del h_Ene_FERS_LG[ch]
+        
         cFERS_HG = ROOT.TCanvas(f"c{branch_name_hg}_ch{ch}", f"c{branch_name_hg}_ch{ch}", 500, 500)
         h_Ene_FERS_HG[ch].Draw()
         cFERS_HG.SetLogy()
         cFERS_HG.SaveAs(f"{path_plots_fers}/{branch_name_hg}_ch{ch}.png")
-
+        del cFERS_HG
+        del h_Ene_FERS_HG[ch]
+                
         p2_AmpFERS_vs_Pos = ROOT.TProfile2D(f"p2_Amp{branch_name_hg}_ch{ch}_vs_Pos",f"p2_Amp{branch_name_hg}_ch{ch}_vs_Pos",
                                 100, -50, 50, 100, -50, 50)
 
 #        amps = np.array(results[trigger_name]["maxamp"], dtype=float)
-        for x, y, amp in zip(beamX, beamY, valuesHG):
+        for x, y, amp in zip(beamX, beamY, valuesLG):
             #        print(x,y,amp,amp>150.)
-            p2_AmpFERS_vs_Pos.Fill(x, y, amp>150.)
+            p2_AmpFERS_vs_Pos.Fill(x, y, amp>1000.)
             #        p2_Amp_vs_Pos.Fill(x, y, amp)
         cname = f"{branch_name_hg}_ch{ch}"
         cAmpFERS_vs_Pos = ROOT.TCanvas(cname,cname,500,500)
@@ -310,17 +326,28 @@ for board in range(len(all_fers_hg.items())):
         cAmpFERS_vs_Pos.SaveAs(f"{path_plots}/cAmpFERS{cname}_vs_Pos.png")
         del cAmpFERS_vs_Pos
 
-
+        
     # Map HG
-#        h2_Map_FERS_HG[branch_name_hg].Fill(pos[0], pos[1], np.mean(values))
+#    h2_Map_FERS_HG[branch_name_hg].Fill(pos[0], pos[1], np.mean(values))
+    cMAP_FERS_HG = ROOT.TCanvas(f"cMAP_{branch_name_hg}", f"cMAP_{branch_name_hg}", 700, 700)
+    h2_Map_FERS_HG[branch_name_hg].SetStats(0)
+    h2_Map_FERS_HG[branch_name_hg].Draw("COLZ")
+    cMAP_FERS_HG.SetGrid(1,1)
+    cMAP_FERS_HG.SaveAs(f"{path_plots}/{branch_name_hg}.png")
+    cMAP_FERS_HG.SetLogz()
+    cMAP_FERS_HG.SaveAs(f"{path_plots}/{branch_name_hg}_Log.png")    
+    del cMAP_FERS_HG
 
-    # cMAP_FERS_HG = ROOT.TCanvas(f"cMAP_{branch_name_hg}", f"cMAP_{branch_name_hg}", 700, 700)
-    # h2_Map_FERS_HG[branch_name_hg].SetStats(0)
-    # h2_Map_FERS_HG[branch_name_hg].Draw("COLZ")
-    # cMAP_FERS_HG.SetGrid(1,1)
-    # cMAP_FERS_HG.SaveAs(f"{path_plots}/{branch_name_hg}.png")
-    # del cMAP_FER_HG
+    cMAP_FERS_LG = ROOT.TCanvas(f"cMAP_{branch_name_lg}", f"cMAP_{branch_name_lg}", 700, 700)
+    h2_Map_FERS_LG[branch_name_lg].SetStats(0)
+    h2_Map_FERS_LG[branch_name_lg].Draw("COLZ")
+    cMAP_FERS_LG.SetGrid(1,1)
+    cMAP_FERS_LG.SaveAs(f"{path_plots}/{branch_name_lg}.png")
+    cMAP_FERS_LG.SetLogz()
+    cMAP_FERS_LG.SaveAs(f"{path_plots}/{branch_name_lg}_Log.png")    
+    del cMAP_FERS_LG
 
+ 
 
 
 #-------------------------------------------------------
