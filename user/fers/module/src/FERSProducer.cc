@@ -405,10 +405,9 @@ void FERSProducer::DoConfigure(){
 			EUDAQ_WARN("check shared in board "+std::to_string(kbrd)
 			+": HVbias = "+std::to_string(shmp->HVbias[fers_group][kbrd])
 			+" acqmode="+std::to_string(WDcfg.AcquisitionMode));
-			//std::this_thread::sleep_for(std::chrono::seconds(1));
-			sleep(1);
-			FERS_HV_Set_OnOff(shmp->HVbias[fers_group][kbrd], 1); // set HV on
-			sleep(5);
+			sleep(0.5);
+			FERS_HV_Set_OnOff(shmp->handle[fers_group][kbrd], shmp->HVbias[fers_group][kbrd]); // set HV on
+			sleep(3);
 		} else {
 			EUDAQ_THROW("HV bias NOT set");
 		}
@@ -668,8 +667,8 @@ void FERSProducer::RunLoop(){
 				status = FERS_GetEvent(shmp->handle[fers_group], &bindex, &DataQualifier, &tstamp_us, &Event, &nb);
 				if(status<0){
 			            EUDAQ_THROW("FERS: Readout failure,  ret = " + std::to_string(status));
+				    
 				}
-
 				if(nb>0&&DataQualifier==17) { // Data event in Spec 
 					newData++; // data - events*boards
 					SpectEvent_t* EventSpect = (SpectEvent_t*)Event;
