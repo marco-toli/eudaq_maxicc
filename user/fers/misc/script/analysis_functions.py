@@ -2,7 +2,7 @@
 import ROOT
 import numpy as np
 from array import array
-
+from scipy.interpolate import interp1d
 import re
 
 def get_gr_ch(branch_name):
@@ -89,3 +89,82 @@ def get_times(waveforms, thresholds, dt=1.0):
                 times[i] = t_cross
 
     return times
+
+import numpy as np
+from scipy.interpolate import interp1d
+
+def get_aligned_waveforms(waveforms, times, maxamp, dt=1.0, amp_threshold=100):
+    """
+    Align waveforms in time using extracted hit times.
+
+    Parameters
+    ----------
+    waveforms : np.ndarray
+        Array of shape (nEvents, nSamples)
+    times : np.ndarray
+        Array of shape (nEvents,) with signal time (e.g. from CFD or threshold crossing)
+    maxamp : np.ndarray
+        Array of shape (nEvents,) with maximum amplitude per event
+    dt : float
+        Sampling interval (ns or arbitrary units)
+    amp_threshold : float
+        Minimum amplitude to consider an event for reference time
+
+    Returns
+    -------
+    aligned_waveforms : np.ndarray
+        Time-aligned waveforms, same shape as input.
+    """
+
+    nEvents, nSamples = waveforms.shape
+    t = np.arange(nSamples) * dt
+
+    # --- compute reference only from "good" events ---
+    good_mask = maxamp > amp_threshold
+    if np.any(good_mask):
+        t_ref = np.median(times[good_mask])
+    else:
+        print("⚠️ No good events found above threshold — using all events for t_ref.")
+        t_ref = np.median(times)
+
+    aligned = np.zeros_like(waveforms)
+
+    for i in range(nEvents):
+        f = interp1d(t, waveforms[i], kind="linear", fill_value=0, bounds_error=False)
+        shifted_t = t + (times[i] - t_ref)
+        aligned[i] = f(shifted_t)
+
+    return aligned
+
+
+
+def template_fit(waveform, dt=1.0, window=10):
+    """
+    Fit waveform with a Gaussian around the maximum using ROOT TF1.
+    waveform : 1D numpy array of amplitudes
+    dt       : time step per sample
+    window   : number of samples around peak to fit
+    Returns: amp_fit, t0_fit
+    """
+    waveform = np.ravel(waveform)  # ensures 1D array
+    n = len(waveform)
+    times = np.arange(n) * dt
+
+    peak_idx = int(np.argmax(waveform))  # make sure it's a scalar integer
+
+    # Define fit range around peak
+    fit_min = max(0, (peak_idx - window) * dt)
+    fit_max = min(n*dt, (peak_idx + window) * dt)
+
+    # ROOT TF1 Gaussian
+    f1 = ROOT.TF1("f1", "[0]*exp(-0.5*((x-[1])/[2])**2)", fit_min, fit_max)
+    f1.SetParameters(waveform[peak_idx], times[peak_idx], dt*5)  # initial amp, t0, width
+
+    # TGraph for fitting
+    tg = ROOT.TGraph(len(waveform), array("d", times), array("d", waveform))
+    tg.Fit(f1, "Q")  # quiet
+
+    amp_fit = f1.GetParameter(0)
+    t0_fit  = f1.GetParameter(1)
+
+    return amp_fit, t0_fit
