@@ -8,6 +8,7 @@ import argparse
 from analysis_functions import get_pedestal, get_gr_ch, get_times, template_fit, get_aligned_waveforms
 from tree_init import find_position_in_map, init_info_tree, init_evt_tree, init_drs_tree, init_fers_tree, fill_info_tree_from_logbook
 import pandas as pd
+from collections import defaultdict
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
@@ -62,21 +63,22 @@ print(f"Number of FERS boards in json: {nFersBoards}")
 
 # Input/output paths
 run_id = args.run
-# path_plots = f"/var/www/html/MAXICC/run_{run_id}"
-# path_plots_drs = f"{path_plots}/drs/"
-# path_plots_fers = f"{path_plots}/fers/"
-# path_reco = "/mnt/mybook/MAXICC/CERNTB_Sept2025/data/reco/"
-
-path_plots = f"/home/toli/cernbox/WORKAREA/MAXICC/CERNTBSeptember2025/plots/run_{run_id}"
+path_plots = f"/var/www/html/MAXICC/run_{run_id}"
 path_plots_drs = f"{path_plots}/drs/"
 path_plots_fers = f"{path_plots}/fers/"
-path_reco = "/home/toli/cernbox/WORKAREA/MAXICC/CERNTBSeptember2025/reco/"
+path_reco = "/mnt/mybook/MAXICC/CERNTB_Sept2025/data/reco/"
+
+# path_plots = f"/home/toli/cernbox/WORKAREA/MAXICC/CERNTBSeptember2025/plots/run_{run_id}"
+# path_plots_drs = f"{path_plots}/drs/"
+# path_plots_fers = f"{path_plots}/fers/"
+# path_reco = "/home/toli/cernbox/WORKAREA/MAXICC/CERNTBSeptember2025/reco/"
 
 os.makedirs(path_plots, exist_ok=True)
 os.makedirs(path_plots_drs, exist_ok=True)
 os.makedirs(path_plots_fers, exist_ok=True)
 
-file = ROOT.TFile.Open(f"/home/toli/cernbox/WORKAREA/MAXICC/CERNTBSeptember2025/root/run{run_id:04d}.root")
+file = ROOT.TFile.Open(f"/mnt/mybook/MAXICC/CERNTB_Sept2025/data/root/run{run_id:04d}.root")
+#file = ROOT.TFile.Open(f"/home/toli/cernbox/WORKAREA/MAXICC/CERNTBSeptember2025/root/run{run_id:04d}.root")
 out_file = ROOT.TFile(f"{path_reco}/reco_run{run_id:04d}.root", "RECREATE")
                       
 # Read tree
@@ -433,7 +435,10 @@ h_Ene_FERS_HG = {}
 h2_Map_FERS_LG = {}
 h2_Map_FERS_HG = {}
 
-chFERSmask = [21,26,28,33,34,39,43,46,29,35,36]
+chFERSmask = defaultdict(list)
+chFERSmask[0] = [21,26,28,33,34,39,43,46,36]
+chFERSmask[2] =[33,35]
+
 
 for board in range(len(all_fers_hg.items())):
     branch_name_hg = f"FERS_Board{board}_energyHG"
@@ -466,7 +471,7 @@ for board in range(len(all_fers_hg.items())):
             h2_Map_FERS_LG[branch_name_lg].Fill(pos[0], pos[1], np.mean(valuesLG))
             h2_Map_FERS_HG[branch_name_hg].Fill(pos[0], pos[1], np.mean(valuesHG))
         
-        if (ch not in chFERSmask):
+        if (ch not in chFERSmask[board]):
             continue
 
 
