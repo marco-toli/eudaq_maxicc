@@ -11,6 +11,10 @@ def init_info_tree():
     tree.t_vb1   = array('f', [0])
     tree.t_vb2   = array('f', [0])
     tree.t_vb3   = array('f', [0])
+    tree.t_hgain = array('f', [0])
+    tree.t_lgain = array('f', [0])
+    tree.t_stime = array('f', [0])
+    tree.t_holdt = array('f', [0])    
     tree.t_conf  = array('i', [0])
     tree.Branch("t_angle", tree.t_angle, "t_angle/F")
     tree.Branch("t_beam", tree.t_beam)
@@ -18,6 +22,10 @@ def init_info_tree():
     tree.Branch("t_vb1", tree.t_vb1, "t_vb1/F")
     tree.Branch("t_vb2", tree.t_vb2, "t_vb2/F")
     tree.Branch("t_vb3", tree.t_vb3, "t_vb3/F")
+    tree.Branch("t_hgain", tree.t_hgain, "t_hgain/F")
+    tree.Branch("t_lgain", tree.t_lgain, "t_lgain/F")
+    tree.Branch("t_stime", tree.t_stime, "t_stime/F")
+    tree.Branch("t_holdt", tree.t_holdt, "t_holdt/F")    
     tree.Branch("t_conf", tree.t_conf, "t_conf/I")
     return tree#, {"t_angle": t_angle, "t_ene": t_ene, "t_conf": t_conf, "t_vb1": t_vb1, "t_vb2": t_vb2, "t_vb3": t_vb3}
 
@@ -73,8 +81,9 @@ def fill_info_tree_from_logbook(run_number, logbook, readFromLogbook=True):
     tree_info = init_info_tree()
 
     # Default values
-    angle = ene = vb1 = vb2 = vb3 = -999.0
+    angle = ene = vb1 = vb2 = vb3 = -999.0    
     beam = "unknown"
+    hgain = lgain = stime = holdt = -999.0
     conf = -999
 
     if not readFromLogbook:
@@ -93,6 +102,10 @@ def fill_info_tree_from_logbook(run_number, logbook, readFromLogbook=True):
                 vb1   = float(selected_row["Vbias_S_rear"].values[0])
                 vb2   = float(selected_row["Vbias_C_rear"].values[0])
                 vb3   = float(selected_row["Vbias_S_front"].values[0])
+                hgain = float(selected_row["HG"].values[0])
+                lgain = float(selected_row["LG"].values[0])
+                stime = float(selected_row["Shaping_time"].values[0])
+                holdt = float(selected_row["HoldOff_delay"].values[0])                
                 conf  = int(selected_row["Conf"].values[0]) if "Conf" in selected_row else -999
             else:
                 print(f"⚠️ Run {run_number} not found in logbook. Using default values.")
@@ -108,6 +121,10 @@ def fill_info_tree_from_logbook(run_number, logbook, readFromLogbook=True):
     tree_info.t_vb1[0]   = vb1
     tree_info.t_vb2[0]   = vb2
     tree_info.t_vb3[0]   = vb3
+    tree_info.t_hgain[0] = hgain
+    tree_info.t_lgain[0] = lgain
+    tree_info.t_stime[0] = stime
+    tree_info.t_holdt[0] = holdt
 
     tree_info.t_beam.clear()
     tree_info.t_beam.replace(0, len(tree_info.t_beam), beam)  # beam è una stringa
