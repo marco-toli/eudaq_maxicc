@@ -178,8 +178,24 @@ for branch_name, waveforms in all_wf.items():
     integral = np.sum(waveforms[:, mask], axis=1)*dt
     times        = get_times(waveforms, thresholds=maxamp*0.5)
 
-    aligned_waveforms = get_aligned_waveforms(waveforms, times, maxamp, dt=1.0, amp_threshold=100 )
-    avg_waveform_aligned = np.mean(aligned_waveforms, axis=0)
+    aligned_waveforms = get_aligned_waveforms(waveforms, times, maxamp, dt=1.0, amp_threshold=100)
+
+    # Filter out saturated (>3000) and null (<50) waveforms for the average
+    amp_mask = (maxamp >= 150) & (maxamp <= 3450)
+    aligned_waveforms_filtered = aligned_waveforms[amp_mask]
+    if aligned_waveforms_filtered.shape[0] > 0:
+        avg_waveform_aligned = np.mean(aligned_waveforms_filtered, axis=0)
+    else:
+        avg_waveform_aligned = np.mean(aligned_waveforms, axis=0)  # fallback: all events
+
+
+    # Normalized average waveform: divide the average by its own integral
+    integral_avg = np.sum(avg_waveform_aligned) * dt
+    if np.abs(integral_avg) > 0:
+        avg_waveform_aligned_norm = avg_waveform_aligned / integral_avg
+    else:
+        avg_waveform_aligned_norm = np.zeros_like(avg_waveform_aligned)
+        
 
     # template = np.mean(aligned_waveforms, axis=0)
     # template /= np.max(template)  # normalize to 1
@@ -191,11 +207,12 @@ for branch_name, waveforms in all_wf.items():
         "waveforms": waveforms,
         "avg_waveform": avg_waveform,
         "avg_waveform_aligned": avg_waveform_aligned,
+        "avg_waveform_aligned_norm": avg_waveform_aligned_norm,
         "pedestals": pedestals,
         "maxamp": maxamp,
         "integral": integral,
         "times": times
-    }
+    }    
 
     # Plotting: individual and average waveforms
     num_samples = avg_waveform.shape[0]
@@ -391,6 +408,57 @@ for i in range(nEvents):
         tree_fers.Fill()
 
 # Write output file
+out_file.cd()
+# -------------------------------------------------------
+# Save waveform graphs in a dedicated directory
+# -------------------------------------------------------
+out_file.cd()
+dir_wf = out_file.mkdir("waveforms")
+
+dir_examples    = dir_wf.mkdir("examples")
+dir_avg_aligned = dir_wf.mkdir("avg_aligned")
+dir_avg_norm    = dir_wf.mkdir("avg_aligned_norm")
+
+N_EXAMPLES = 10
+
+for branch_name, res in results.items():
+    waveforms            = res["waveforms"]
+    avg_waveform_aligned = res["avg_waveform_aligned"]
+    avg_waveform_norm    = res["avg_waveform_aligned_norm"]
+    maxamp               = res["maxamp"]
+
+    # --- 10 example waveforms (unfiltered, raw) ---
+    dir_examples.cd()
+    n_save = min(N_EXAMPLES, waveforms.shape[0])
+    for ev in range(n_save):
+        wf    = waveforms[ev]
+        x_arr = array("d", np.arange(len(wf), dtype=float))
+        y_arr = array("d", wf.astype(float))
+        g = ROOT.TGraph(len(wf), x_arr, y_arr)
+        g.SetName(f"gWfEx_{branch_name}_ev{ev}")
+        g.SetTitle(f"{branch_name} event {ev};Sample;Amplitude (ADC)")
+        g.Write()
+
+    # --- Average aligned waveform (saturated/null events excluded) ---
+    dir_avg_aligned.cd()
+    n_al  = avg_waveform_aligned.shape[0]
+    x_al  = array("d", np.arange(n_al, dtype=float))
+    y_al  = array("d", avg_waveform_aligned.astype(float))
+    g_al  = ROOT.TGraph(n_al, x_al, y_al)
+    g_al.SetName(f"gWfAvgAl_{branch_name}")
+    g_al.SetTitle(f"Avg aligned waveform {branch_name};Sample;Amplitude (ADC)")
+    g_al.Write()
+
+    # --- Average normalized waveform ---
+    dir_avg_norm.cd()
+    n_nm  = avg_waveform_norm.shape[0]
+    x_nm  = array("d", np.arange(n_nm, dtype=float))
+    y_nm  = array("d", avg_waveform_norm.astype(float))
+    g_nm  = ROOT.TGraph(n_nm, x_nm, y_nm)
+    g_nm.SetName(f"gWfAvgNorm_{branch_name}")
+    g_nm.SetTitle(f"Avg norm waveform {branch_name};Sample;Amplitude / Integral")
+    g_nm.Write()
+
 out_file.cd()
 
 tree_info.Write()
